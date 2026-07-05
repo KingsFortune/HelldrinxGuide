@@ -26,7 +26,7 @@ node tools/parse_rooms.mjs
 ## Wiki assets (icons + Discord share pages)
 
 1. Edit `site.config.json` — set `siteUrl` to your GitHub Pages URL  
-   Example: `https://yourname.github.io/HellDrinxGuide`
+   Example: `https://yourname.github.io/HelldrinxGuide`
 
 2. Build (double-click `tools/build.bat` on Windows, or run):
 
@@ -51,9 +51,9 @@ This writes:
 
 | Type | URL pattern |
 |------|-------------|
-| Item (Discord) | `https://yoursite.github.io/HellDrinxGuide/i/Base--Katana/` |
-| Item (in-app) | `https://yoursite.github.io/HellDrinxGuide/#wiki/item/Base.Katana` |
-| Vehicle | `https://yoursite.github.io/HellDrinxGuide/v/M60A3/` |
+| Item (Discord) | `https://yoursite.github.io/HelldrinxGuide/i/Base--Katana/` |
+| Item (in-app) | `https://yoursite.github.io/HelldrinxGuide/#wiki/item/Base.Katana` |
+| Vehicle | `https://yoursite.github.io/HelldrinxGuide/v/M60A3/` |
 
 Discord reads OG tags from the `i/` / `v/` stub pages, then redirects into the SPA.
 
