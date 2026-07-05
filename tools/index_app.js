@@ -1,0 +1,940 @@
+'use strict';
+
+const n = x => parseFloat(x) || 0;
+const I = GUIDE_DATA.items.slice();
+for (const it of I) {
+  if (it._kind === 'Melee' || it._kind === 'Gun') {
+    it._avg = (n(it.MinDamage) + n(it.MaxDamage)) / 2;
+    it._dur = n(it.ConditionMax) * n(it.ConditionLowerChanceOneIn);
+  }
+  if (it._kind === 'Clothing') {
+    it._prot = n(it.BiteDefense) + n(it.ScratchDefense) + n(it.BulletDefense);
+    it._loc = (it.BodyLocation || '').replace(/^[\w]+:/, '');
+  }
+  if (it._kind === 'Container') {
+    it._loc = (it.BodyLocation || it.CanBeEquipped || '').replace(/^[\w]+:/, '');
+    it._slots = (it.AttachmentsProvided || '').split(';').filter(Boolean).length;
+  }
+}
+
+const seen = new Map(), DEDUP = [];
+for (const it of I) {
+  const base = it.DisplayName.replace(/\s*\((Wood|Black|White|Brown|Grey|Green|Pink|Orange|Blue|Purple|Red|Camo[\w ]*)\)\s*/gi, '').trim();
+  const key = [it._src, it._kind, base, it.MinDamage, it.MaxDamage, it.CriticalChance, it.Capacity, it.BiteDefense, it.AmmoType, it.PartType].join('|');
+  if (seen.has(key)) { seen.get(key)._variants = (seen.get(key)._variants || 1) + 1; continue; }
+  const copy = Object.assign({}, it, { DisplayName: base });
+  seen.set(key, copy);
+  DEDUP.push(copy);
+}
+
+const BY_ID = new Map(I.map(i => [i._id, i]));
+const BY_NAME = new Map();
+for (const it of I) {
+  const dn = it.DisplayName.toLowerCase().trim();
+  if (!BY_NAME.has(dn)) BY_NAME.set(dn, it._id);
+}
+const cleanChestName = n => (n || '').replace(/^\d+\s*-\s*/, '').trim();
+const resolveItemId = name => {
+  const nm = (name || '').trim().toLowerCase();
+  if (BY_NAME.has(nm)) return BY_NAME.get(nm);
+  const hit = I.find(i => {
+    const d = i.DisplayName.toLowerCase();
+    return d === nm || d.includes(nm) || nm.includes(d);
+  });
+  return hit?._id || null;
+};
+const SKIP_STAT = new Set(['_id','_src','_kind','_avg','_dur','_prot','_loc','_slots','DisplayName','_desc','_variants']);
+window.BY_ID = BY_ID;
+window.SKIP_STAT = SKIP_STAT;
+
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const KIND_EMOJI = { Melee: '⚔️', Gun: '🔫', WeaponPart: '🔧', Clothing: '🧥', Container: '🎒', Vehicle: '🚗', QoL: '🔩' };
+const kindEmoji = k => KIND_EMOJI[k] || '📦';
+
+// ---------- notes (keep it short — tables have the stats) ----------
+const INTEL = {
+  overview: [
+    { h: "HC", t: "Kill rewards scale with zone difficulty. Vouchers (50/100) are tradeable. Details in <b>Economy</b>." },
+    { h: "Best bags — map spawns", hot: true, t: "<b>IrisEyot Backpack</b> (63 cap) — IrisEyot map, <code>liveshow</code> room. <b>Miku Backpack</b> (60 cap, 99% WR) — Estate 39, <code>mikuroom</code>. Early option: <b>AnruisiTown Military Storage Backpack</b> (46/99%). Click names for coords." },
+    { h: "Data gaps", t: "WILDSTEEL isn't parsed. Vending prices are live-tuned — check machines in-game. Daisy County dev items marked <i>verify</i>." },
+  ],
+  armor: [
+    { h: "Exo farm", hot: true, t: "Exoskeleton (150/150/100, 0.93× speed) pools heaviest in <b>armor storage</b>, then military crates, gun stores. EOD/Jugg same stats at 0.5× speed — skip unless desperate." },
+    { h: "Helmets", t: "120/120/100 helmets with no speed penalty exist. Wear one." },
+  ],
+  slots: [
+    { h: "Weight reduction", t: "99% WR beats raw capacity for heavy loot. 46 cap @ 99% often beats 63 cap @ 95%." },
+    { h: "Max slots", t: "Backpack + Authentic Z T3 traits + ALICE webbing + bandolier + JSling + fanny packs. See Packs table for slot counts." },
+  ],
+};
+
+const MAP_PINS = [
+  { m: /^Base\.IrisEyotBackpack/, label: 'IrisEyot Backpack' },
+  { m: /^Base\.MikuBackPack/, label: 'Miku Backpack' },
+  { m: /^Base\.EXO_Suit/, label: 'Exoskeleton Suit' },
+  { m: /^Base\.IronBarMold/, label: 'Iron Bar Mold', qol: true },
+  { m: /LegendaryDuffel/i, label: 'Legendary Duffel' },
+];
+
+const OPGUIDES = [
+  { m: /^KenshiBlacksmithing\.Falling_Sun/, star: 'Falling Sun', t: `50% crit / 10×, cond 50 @ 1-in-10 — ~20× less durable than Legendary gear. Blacksmith 9, learn <i>Forge Falling Sun</i>. 3× sheet metal, 3× small sheet, long handle, iron bar.` },
+  { m: /^Base\.EXO_Suit/, star: 'Exoskeleton Suit', t: `150/150/100 protection, 0.93× speed.<br><b>Farm:</b> armor storage (weight 0.45) → military containers (0.35) → gun stores (0.28) → army surplus (0.25). Military map zombies can wear Brita gear too.` },
+  { m: /^Base\.(EOD_Armor|JUGG_Armor)/, star: 'EOD / Juggernaut', t: `Same 150/150/100 as Exo but 0.5× speed. Same loot pools — keep as backup, keep farming Exo.` },
+  { m: /^Base\.IrisEyotBackpack/, star: 'IrisEyot Backpack', t: `63 cap / 95% WR.<br><b>Spawn:</b> IrisEyot map, <code>liveshow</code> room — shelves, 2 rolls @ weight 1000.<br><b>Extra:</b> <code>abby</code> room crate rolls 10× vanilla katanas @ 1000 (good HC fodder).` },
+  { m: /^Base\.MikuBackPack/, star: 'Miku Backpack', t: `60 cap / 99% WR + 4 attachment slots.<br><b>Spawn:</b> Estate 39, <code>mikuroom</code> — military locker + side table, 4 rolls @ 100 each. MikuCanteen in same locker.` },
+  { m: /LegendaryDuffel/i, star: 'Legendary Duffel', t: `49 cap / 99% WR, lower-back slot — stacks with backpack. Also a quest reward (check Economy → Quests). Spawn pools in wiki page below.` },
+  { m: /LegendarySatchel/i, star: 'Legendary Satchel', t: `49 cap / 99% WR, satchel slot — third bag layer. See spawn table.` },
+  { m: /^Base\.M72_LAW/, star: 'M72 LAW', t: `100 dmg single-shot rocket. No natural loot table — HC shop, quest, or admin only.` },
+];
+
+const opFor = id => OPGUIDES.find(g => g.m.test(id));
+const pinItem = g => g.qol ? GUIDE_QOL.items.find(i => g.m.test(i._id)) : I.find(i => g.m.test(i._id));
+
+const ECON_INTEL = {
+  earning: [
+    { h: "Kills", hot: true, t: "HC scales with PhunZone difficulty: easy ×0.5, medium ×1, hard ×1.5, <b>very hard ×2 (~20 HC/kill)</b>. Horde night multiplies very-hard zones further (HDX_Hordes). ~500 kills ≈ 10k HC." },
+    { h: "Quests", t: "ECHO + survivor quests pay HC, items, XP. Unclaimed rewards include <b>Legendary Duffel</b> and <b>M923 truck keys</b> — see Quests table." },
+    { h: "Outposts", t: "47 claimable sites pay item bundles every 2–5 days. Coordinates, intervals, and pools in the Outposts table." },
+    { h: "Casino", t: "Slots ~89.8% RTP. Roulette even-money ~97.3%. All house games lose long-term — poker is PvP only. Bets: slots 100–5000, roulette 50–2000." },
+    { h: "Vouchers", t: "<code>HC Voucher</code> (50/100) = tradeable HC. Vending prices are admin-tuned; Discord chest shop is the main sink." },
+  ],
+  chests: [
+    { h: "Tiers", hot: true, t: "Discord shop (<a class='ilink' style='border:none' href='http://158.69.127.148:3001/' target='_blank' rel='noopener'>wiki ↗</a>): Common <b>3,500</b> / Rare <b>7,000</b> / Epic <b>13,000</b> / Legendary <b>20,000</b> — 3 items each. All tiers can drop <b>Pieces</b> for premium chests (Mythical, Military, Vehicles, Cats)." },
+    { h: "Piece value", hot: true, t: "Expected HC/piece: Pieces Chest <b>10,000</b> (guaranteed) · Common ~12,800 · Legendary ~26,700 · Rare ~23,300 · Epic ~39,000. Buy Pieces Chest for pure progress; Legendary if you want its item pool." },
+    { h: "Best pools", t: "<b>Military Chest</b> — 26 items, 75% Legendary / 25% Mythical. <b>Mythical</b> — 7 vehicles. Click chests below for full lists." },
+  ],
+  quests: [
+    { h: "ECHO Act 1", t: "Starts Route 9 gas station (Shab). Table has objectives, rewards, NPC coords." },
+    { h: "Worth chasing", hot: true, t: "<b>Legendary Duffel</b>, <b>M923 keys</b> (×2), Charizard/Blue-Eyes cards, Sed's silver bundles." },
+  ],
+  outposts: [
+    { h: "Basics", t: "Clear infestation radius, claim, get <b>rewardCount</b> items per <b>interval</b> days. Prefer 2-day interval + count 3 + pool you actually use." },
+  ],
+};
+
+const LOOT_INTEL = [
+  { h: "Farm routes", hot: true, t: "Brita armor (Exo/EOD/Jugg): <b>armor storage</b> → military → gun stores. QoL gear: use <b>QoL & Tools</b> tab + tag filters (e.g. Smithing & Forging for iron molds)." },
+  { h: "Fixed spawns", hot: true, t: "<b>IrisEyot</b> <code>liveshow</code> — IrisEyot Backpack. <b>Estate 39</b> <code>mikuroom</code> — Miku Backpack. Hotspot Rooms table has coords for every scripted room." },
+  { h: "Respawn", t: "Loot respawns on a server timer — rotate 2–3 routes instead of pushing outward forever." },
+  { h: "Reading weights", t: "Weight = chance within a roll (1000 ≈ guaranteed). Rolls = draws per container. Click items for full spawn breakdown." },
+];
+
+const VEH_INTEL = [
+  { h: "Super Bulldozer", hot: true, t: "5 modes: Standard (crush + loot), Foliage, Gravel (pave roads), EXTREME (flatten terrain). Top speed 35." },
+  { h: "'93 Elgin Sweeper", hot: true, t: "Vacuums ground loot into truck storage while driving. Top speed 30." },
+  { h: "Military", t: "M113 APC (6 seats, 400 trunk). M60A3 tank (working gun). BTR-80, BMP-2, M41. ECHO quests give <b>M923 keys</b>." },
+  { h: "Fuel & garage", t: "M49A2C tanker + trailer cisterns for base fuel. FunctionalCarLift, VehicleTuner, repair/salvage overhaul mods installed." },
+  { h: "Speed / haul", t: "Fastest: Charger Daytona (201), McLaren F1 (180). Biggest haul: M1095 trailer (700). <b>NoVanillaVehicles</b> — all road spawns are modded." },
+];
+
+const POOL_HINTS = [
+  [/blacksmith|metalwork|smelting|BlacksmithMolds|BlacksmithTools|MetalShop|ToolStoreMetal/i, 'Metalworking shops, forges & tool stores'],
+  [/police.*gun|gunlocker|policestorageguns/i, 'Police station — weapon lockers'],
+  [/police.*locker|policestorage/i, 'Police station lockers'],
+  [/army.*storage|armystorage|military.*locker/i, 'Military bases — storage lockers'],
+  [/gunstore|gun.*store/i, 'Gun stores'],
+  [/armor.*storage/i, 'Armor storage rooms'],
+  [/survivor.*cache|survivorcache/i, 'Survivor caches'],
+  [/antique/i, 'Antique stores'],
+];
+
+function poolHint(where) {
+  for (const [re, hint] of POOL_HINTS) if (re.test(where)) return hint;
+  return null;
+}
+
+function floorName(z) {
+  const f = +z;
+  if (f <= -1) return 'basement';
+  if (f === 0) return 'ground floor';
+  if (f === 1) return '1st floor';
+  return f + 'th floor';
+}
+
+function roomLocs(room) {
+  return GUIDE_ROOMS[room] || [];
+}
+
+function notes(list) {
+  const d = document.createElement('div');
+  d.className = 'grid';
+  d.innerHTML = list.map(x => `<div class="note ${x.hot ? 'hot' : ''}"><h3>${x.h}</h3><div class="prose">${x.t}</div></div>`).join('');
+  return d;
+}
+
+function coordCell(val) {
+  if (!val) return '<span class="count">—</span>';
+  return `<b style="color:#7ee2a0">${esc(val)}</b> <span class="viewall" data-copy="${esc(val)}">⧉ copy</span>`;
+}
+
+function secHead(t) {
+  const d = document.createElement('div');
+  d.className = 'sechead';
+  d.textContent = t;
+  return d;
+}
+
+function linkItem(id, name, star) {
+  const s = star ? ' star' : '';
+  return `<a class="ilink${s}" data-id="${esc(id)}">${esc(name)}</a>`;
+}
+
+function itemGrid(items) {
+  return `<div class="itemgrid">` + items.slice().sort((a, b) => (b.w || 0) - (a.w || 0)).map(i => {
+    const inner = i.id ? linkItem(i.id, i.disp) : esc(i.disp);
+    return `<div class="cell"><span class="em">${kindEmoji(i.kind)}</span><div style="flex:1">${inner}${i.w ? ` <span class="count">w${i.w}</span>` : ''}</div></div>`;
+  }).join('') + `</div>`;
+}
+
+function chestItemGrid(items) {
+  const byType = new Map();
+  for (const i of items) {
+    const t = (i.t || 'Other').trim() || 'Other';
+    if (!byType.has(t)) byType.set(t, []);
+    byType.get(t).push(i);
+  }
+  let h = '';
+  for (const [type, list] of [...byType.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+    h += `<div class="dsec">${esc(type)} <span class="count">(${list.length})</span></div>`;
+    h += `<div class="itemgrid">` + list.slice().sort((a, b) => a.n.localeCompare(b.n)).map(i => {
+      const id = resolveItemId(i.n);
+      const inner = id ? linkItem(id, i.n) : esc(i.n);
+      return `<div class="cell">${i.ic ? `<img src="${esc(i.ic)}" loading="lazy" alt="">` : '<span class="em">📦</span>'}<div style="flex:1">${inner}</div></div>`;
+    }).join('') + `</div>`;
+  }
+  return h;
+}
+
+function poolDetail(where, weight, rolls, mod) {
+  const pool = where.replace(/ \(vehicle\)$/, '');
+  const pl = typeof GUIDE_POOL_LOCS !== 'undefined' && GUIDE_POOL_LOCS.pools[pool];
+  const wt = weight ? ` <span class="count">item weight ${weight}${rolls ? ` · ${rolls} rolls` : ''}</span>` : '';
+  const hint = pl?.hint;
+  if (hint) return hint + wt;
+  return `<b>${esc(pool)}</b>${pl?.vehicle ? ' (vehicle cargo)' : ' loot pool'}${wt}${mod && mod !== 'Vanilla' ? ` · <span class="mod">${esc(mod)}</span>` : ''}`;
+}
+
+function mergeSpawns(id, spawns) {
+  const short = id.replace(/^[\w]+\./, '');
+  const a = spawns[id] || [], b = spawns[short] || [];
+  if (!a.length) return b;
+  if (!b.length) return a;
+  const seenK = new Set(), out = [];
+  for (const s of [...b, ...a]) {
+    const k = [s.where, s.mod, s.weight, s.rolls].join('|');
+    if (seenK.has(k)) continue;
+    seenK.add(k); out.push(s);
+  }
+  return out;
+}
+
+function whereCards(lines) {
+  if (!lines || !lines.length) return '';
+  return `<div class="dsec">Locations</div>` +
+    lines.map(w => `<div class="loc" style="border-left-color:var(--green)"><span class="pin">🎯</span><div style="flex:1"><div class="prose">${w}</div></div></div>`).join('');
+}
+
+function spawnLocHTML(sp) {
+  const rooms = [], pools = new Map();
+  for (const s of sp) {
+    const rm = s.where.match(/^room "([^"]+)" → (\w+)$/);
+    if (rm) rooms.push({ room: rm[1], cont: rm[2], weight: s.weight, rolls: s.rolls, mod: s.mod, locs: roomLocs(rm[1]) });
+    else if (!pools.has(s.where)) pools.set(s.where, { where: s.where, weight: s.weight, rolls: s.rolls, mod: s.mod });
+  }
+  let h = '';
+  if (rooms.length) {
+    h += `<div class="dsec">Room spawns</div>`;
+    for (const r of rooms) {
+      if (r.locs.length) for (const L of r.locs) {
+        h += `<div class="loc"><span class="pin">📍</span><div style="flex:1">
+          <b>${esc(L.map)}</b> — room "${esc(r.room)}" <span class="count">(${esc(r.cont)})</span><br>
+          <span class="sub2">Go to <b style="color:#7ee2a0">${L.x}, ${L.y}</b> · ${floorName(L.z)}${r.weight ? ` · spawn weight ${r.weight}` : ''}${r.rolls ? ` · ${r.rolls} rolls` : ''}</span></div>
+          <span class="viewall" data-copy="${L.x},${L.y},${L.z}">⧉ copy</span></div>`;
+      } else h += `<div class="loc" style="border-left-color:var(--gold)"><span class="pin">🏠</span><div style="flex:1">
+          <b>room "${esc(r.room)}"</b> <span class="count">(${esc(r.cont)})</span><br>
+          <span class="sub2">On the <b>${esc(r.mod)}</b> map — search that map area${r.weight ? ` · weight ${r.weight}` : ''}</span></div></div>`;
+    }
+  }
+  if (pools.size) {
+    h += `<div class="dsec">Where to search (building + container)</div>`;
+    const sorted = [...pools.values()].sort((a, b) => (a.mod === 'Vanilla' ? -1 : 1) - (b.mod === 'Vanilla' ? -1 : 1) || (b.weight || 0) - (a.weight || 0));
+    for (const p of sorted.slice(0, 18)) {
+      h += `<div class="loc" style="border-left-color:var(--blue)"><span class="pin">📦</span><div style="flex:1"><div class="prose">${poolDetail(p.where, p.weight, p.rolls, p.mod)}</div></div></div>`;
+    }
+    if (sorted.length > 18) h += `<p class="count">+${sorted.length - 18} more spawn pools.</p>`;
+  }
+  return h;
+}
+
+function locCard(L) {
+  return `<div class="loc"><span class="pin">📍</span><div style="flex:1">
+    <b>${esc(L.map)}</b> · <b style="color:#7ee2a0">${L.x}, ${L.y}</b> · ${floorName(L.z)}</div>
+    <span class="viewall" data-copy="${L.x},${L.y},${L.z}">⧉ copy</span></div>`;
+}
+
+// ---------- QoL ----------
+const QOL_BY_ID = new Map((typeof GUIDE_QOL !== 'undefined' ? GUIDE_QOL.items : []).map(i => [i._id, i]));
+const QOL_BY_SHORT = new Map();
+for (const q of QOL_BY_ID.values()) QOL_BY_SHORT.set(q._id.replace(/^[\w]+\./, ''), q);
+window.QOL_BY_ID = QOL_BY_ID;
+const LOOT_TAGS = typeof GUIDE_QOL !== 'undefined' ? GUIDE_QOL.tags : {};
+
+function tagHTML(tags) {
+  if (!tags || !tags.length) return '<span class="count">—</span>';
+  return tags.map(t => `<span class="ltag ${t}">${esc(LOOT_TAGS[t] || t)}</span>`).join('');
+}
+
+function tagBar(active, onPick) {
+  const bar = document.createElement('div'); bar.className = 'tagbar';
+  bar.innerHTML = `<span class="lbl">Tags:</span>`;
+  const all = document.createElement('button'); all.type = 'button'; all.className = 'tagchip' + (!active ? ' on' : '');
+  all.textContent = 'All'; all.onclick = () => onPick('');
+  bar.append(all);
+  for (const [id, label] of Object.entries(LOOT_TAGS)) {
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'tagchip' + (active === id ? ' on' : '');
+    b.textContent = label; b.onclick = () => onPick(id);
+    bar.append(b);
+  }
+  return bar;
+}
+
+// ---------- tables ----------
+let sortKey = 'DisplayName', sortDir = -1;
+
+function tableView(rows, cols) {
+  const mods = [...new Set(rows.map(r => r._src))].sort();
+  return { rows, cols, mods };
+}
+
+function tableSection(spec, defaultSort, tagKey, tagFilter) {
+  if (tagKey) return lootTableSection(spec, defaultSort, tagKey, tagFilter);
+  sortKey = defaultSort; sortDir = -1;
+  const div = document.createElement('div');
+  const state = { q: '', mod: '' };
+  const rerender = () => renderTable(div, spec, state);
+  div.innerHTML = `<div class="controls"><input type="search" placeholder="search…">
+    <select><option value="">all mods (${spec.mods.length})</option>${spec.mods.map(m => `<option>${esc(m)}</option>`).join('')}</select>
+    <span class="count"></span></div>
+    <div style="max-height:70vh;overflow:auto;border:1px solid var(--border);border-radius:6px"><table><thead></thead><tbody></tbody></table></div>`;
+  div.querySelector('input').oninput = e => { state.q = e.target.value; rerender(); };
+  div.querySelector('select').onchange = e => { state.mod = e.target.value; rerender(); };
+  rerender();
+  return div;
+}
+
+function lootTableSection(spec, defaultSort, tagKey, tagFilter) {
+  sortKey = defaultSort; sortDir = -1;
+  const div = document.createElement('div');
+  const state = { q: '', mod: '', tag: tagFilter || '' };
+  const rerender = () => {
+    if (tagKey) {
+      const old = div.querySelector('.tagbar');
+      const bar = tagBar(state.tag, t => { state.tag = t; rerender(); });
+      if (old) old.replaceWith(bar); else div.insertBefore(bar, div.querySelector('.controls'));
+    }
+    renderLootTable(div, spec, state, tagKey);
+  };
+  div.innerHTML = `<div class="controls"><input type="search" placeholder="search name, slot, or tag…">
+    <select><option value="">all mods (${spec.mods.length})</option>${spec.mods.map(m => `<option>${esc(m)}</option>`).join('')}</select>
+    <span class="count"></span></div>
+    <div style="max-height:70vh;overflow:auto;border:1px solid var(--border);border-radius:6px"><table><thead></thead><tbody></tbody></table></div>`;
+  div.querySelector('input').oninput = e => { state.q = e.target.value; rerender(); };
+  div.querySelector('select').onchange = e => { state.mod = e.target.value; rerender(); };
+  rerender();
+  return div;
+}
+
+function renderTable(host, spec, state, tagKey) {
+  if (tagKey) return renderLootTable(host, spec, state, tagKey);
+  return renderTableCore(host, spec, state);
+}
+
+function renderTableCore(host, spec, state) {
+  const q = state.q.toLowerCase(), mod = state.mod;
+  let rows = spec.rows.filter(r => {
+    if (mod && r._src !== mod) return false;
+    if (!q) return true;
+    return r.DisplayName.toLowerCase().includes(q) || String(r._id || '').toLowerCase().includes(q);
+  });
+  const col = spec.cols.find(c => c.k === sortKey) || spec.cols[0];
+  rows.sort((a, b) => {
+    const av = col.num ? (n(a[col.k]) ?? -Infinity) : (a[col.k] ?? '');
+    const bv = col.num ? (n(b[col.k]) ?? -Infinity) : (b[col.k] ?? '');
+    return (av < bv ? -1 : av > bv ? 1 : 0) * sortDir;
+  });
+  const total = rows.length; rows = rows.slice(0, 400);
+  host.querySelector('.count').textContent = `${rows.length < total ? 'showing ' + rows.length + ' of ' : ''}${total} items`;
+  host.querySelector('thead').innerHTML = '<tr>' + spec.cols.map(c =>
+    `<th data-k="${c.k}">${c.h}${sortKey === c.k ? ` <span class="arr">${sortDir < 0 ? '▼' : '▲'}</span>` : ''}</th>`).join('') + '</tr>';
+  host.querySelector('tbody').innerHTML = rows.map(r => '<tr>' + spec.cols.map(c => {
+    let v = c.f ? c.f(r) : r[c.k];
+    if (v == null || v === '') v = '<span style="color:#4a5164">–</span>';
+    return `<td class="${c.cls || ''}">${v}</td>`;
+  }).join('') + '</tr>').join('');
+  host.querySelectorAll('th').forEach(th => th.onclick = () => {
+    const k = th.dataset.k;
+    if (sortKey === k) sortDir *= -1; else { sortKey = k; sortDir = -1; }
+    renderTableCore(host, spec, state);
+  });
+}
+
+function renderLootTable(host, spec, state, tagKey) {
+  const q = state.q.toLowerCase(), mod = state.mod, tag = state.tag;
+  let rows = spec.rows.filter(r => {
+    if (mod && r._src !== mod) return false;
+    if (tag && tagKey && !(r[tagKey] || []).includes(tag)) return false;
+    if (!q) return true;
+    const tagTxt = (r[tagKey] || []).map(t => LOOT_TAGS[t] || t).join(' ');
+    return r.DisplayName.toLowerCase().includes(q) || (r._loc || '').includes(q) || tagTxt.toLowerCase().includes(q) || (r._cat || '').toLowerCase().includes(q);
+  });
+  const col = spec.cols.find(c => c.k === sortKey) || spec.cols[1];
+  rows.sort((a, b) => {
+    const av = col.num ? (n(a[col.k]) ?? -Infinity) : (a[col.k] ?? '');
+    const bv = col.num ? (n(b[col.k]) ?? -Infinity) : (b[col.k] ?? '');
+    return (av < bv ? -1 : av > bv ? 1 : 0) * sortDir;
+  });
+  const total = rows.length; rows = rows.slice(0, 400);
+  host.querySelector('.count').textContent = `${rows.length < total ? 'showing ' + rows.length + ' of ' : ''}${total} items${tag ? ' · ' + (LOOT_TAGS[tag] || tag) : ''}`;
+  host.querySelector('thead').innerHTML = '<tr>' + spec.cols.map(c =>
+    `<th data-k="${c.k}">${c.h}${sortKey === c.k ? ` <span class="arr">${sortDir < 0 ? '▼' : '▲'}</span>` : ''}</th>`).join('') + '</tr>';
+  host.querySelector('tbody').innerHTML = rows.map(r => '<tr>' + spec.cols.map(c => {
+    let v = c.f ? c.f(r) : r[c.k];
+    if (v == null || v === '') v = '<span style="color:#4a5164">–</span>';
+    return `<td class="${c.cls || ''}">${v}</td>`;
+  }).join('') + '</tr>').join('');
+  host.querySelectorAll('th').forEach(th => th.onclick = () => {
+    const k = th.dataset.k;
+    if (sortKey === k) sortDir *= -1; else { sortKey = k; sortDir = -1; }
+    renderLootTable(host, spec, state, tagKey);
+  });
+}
+
+function econTable(rows, cols, defaultSort) {
+  sortKey = defaultSort; sortDir = 1;
+  const div = document.createElement('div');
+  const state = { q: '' };
+  const spec = { rows, cols, mods: [...new Set(rows.map(r => r._src))].sort() };
+  const rerender = () => {
+    const q = state.q.toLowerCase();
+    let filtered = rows.filter(r => !q || Object.values(r).some(v => String(v).toLowerCase().includes(q)));
+    const col = cols.find(c => c.k === sortKey) || cols[0];
+    filtered.sort((a, b) => {
+      const av = a[col.k] ?? '', bv = b[col.k] ?? '';
+      return (av < bv ? -1 : av > bv ? 1 : 0) * sortDir;
+    });
+    filtered = filtered.slice(0, 300);
+    div.querySelector('.count').textContent = `${filtered.length} rows`;
+    div.querySelector('thead').innerHTML = '<tr>' + cols.map(c =>
+      `<th data-k="${c.k}">${c.h}${sortKey === c.k ? ` <span class="arr">${sortDir < 0 ? '▼' : '▲'}</span>` : ''}</th>`).join('') + '</tr>';
+    div.querySelector('tbody').innerHTML = filtered.map(r => '<tr>' + cols.map(c => {
+      let v = c.f ? c.f(r) : r[c.k];
+      if (v == null || v === '') v = '<span style="color:#4a5164">–</span>';
+      return `<td class="${c.cls || ''}">${v}</td>`;
+    }).join('') + '</tr>').join('');
+    div.querySelectorAll('th').forEach(th => th.onclick = () => {
+      const k = th.dataset.k;
+      if (sortKey === k) sortDir *= -1; else { sortKey = k; sortDir = 1; }
+      rerender();
+    });
+  };
+  div.innerHTML = `<div class="controls"><input type="search" placeholder="filter…"><span class="count"></span></div>
+    <div style="max-height:70vh;overflow:auto;border:1px solid var(--border);border-radius:6px"><table><thead></thead><tbody></tbody></table></div>`;
+  div.querySelector('input').oninput = e => { state.q = e.target.value; rerender(); };
+  rerender();
+  return div;
+}
+
+function gearCols(kind) {
+  const nameCol = { k: 'DisplayName', h: 'Name', cls: 'name', f: r => linkItem(r._id, r.DisplayName, !!opFor(r._id)) };
+  if (kind === 'Melee') return [nameCol,
+    { k: '_avg', h: 'Avg dmg', num: 1, f: r => n(r._avg).toFixed(1) },
+    { k: 'CriticalChance', h: 'Crit %', num: 1 },
+    { k: 'CritDmgMultiplier', h: 'Crit ×', num: 1 },
+    { k: '_dur', h: 'Durability', num: 1, f: r => Math.round(r._dur).toLocaleString() },
+    { k: '_src', h: 'Mod', cls: 'mod' },
+  ];
+  if (kind === 'Gun') return [nameCol,
+    { k: '_avg', h: 'Avg dmg', num: 1, f: r => n(r._avg).toFixed(1) },
+    { k: 'AmmoType', h: 'Ammo', f: r => esc((r.AmmoType || '').replace(/^[\w]+:/, '')) },
+    { k: 'MaxAmmo', h: 'Mag', num: 1 },
+    { k: 'MaxRange', h: 'Range', num: 1 },
+    { k: 'HitChance', h: 'Hit %', num: 1 },
+    { k: '_src', h: 'Mod', cls: 'mod' },
+  ];
+  if (kind === 'WeaponPart') return [nameCol,
+    { k: 'PartType', h: 'Slot' },
+    { k: 'HitChanceModifier', h: 'Hit +', num: 1 },
+    { k: 'RecoilDelayModifier', h: 'Recoil', num: 1 },
+    { k: 'MountOn', h: 'Mounts on', cls: 'wrap', f: r => { const m = (r.MountOn || '').split(';').filter(Boolean); return esc(m.slice(0, 4).join(', ')) + (m.length > 4 ? ` <span class="count">+${m.length - 4} more</span>` : ''); } },
+    { k: '_src', h: 'Mod', cls: 'mod' },
+  ];
+  if (kind === 'Clothing') return [nameCol,
+    { k: 'BiteDefense', h: 'Bite', num: 1 },
+    { k: 'ScratchDefense', h: 'Scratch', num: 1 },
+    { k: 'BulletDefense', h: 'Bullet', num: 1 },
+    { k: 'RunSpeedModifier', h: 'Run ×', f: r => r.RunSpeedModifier || '1' },
+    { k: '_loc', h: 'Slot' },
+    { k: '_src', h: 'Mod', cls: 'mod' },
+  ];
+  if (kind === 'Container') return [nameCol,
+    { k: 'Capacity', h: 'Cap', num: 1 },
+    { k: 'WeightReduction', h: 'WR %', num: 1 },
+    { k: '_loc', h: 'Slot' },
+    { k: '_slots', h: '+Slots', num: 1 },
+    { k: 'AttachmentsProvided', h: 'Attachment slots', cls: 'wrap', f: r => { const s = (r.AttachmentsProvided || '').split(';').filter(Boolean); return esc(s.slice(0, 3).join(', ')) + (s.length > 3 ? ` <span class="count">+${s.length - 3} more</span>` : ''); } },
+    { k: '_src', h: 'Mod', cls: 'mod' },
+  ];
+  return [nameCol, { k: '_src', h: 'Mod', cls: 'mod' }];
+}
+
+// ---------- loot data ----------
+let LOOT = null;
+function lootData() {
+  const sp = GUIDE_DETAILS.spawns;
+  const nameOf = {}, idOf = {}, kindOf = {}, tagsOf = {}, catOf = {}, noteOf = {};
+  for (const it of I) { const s = it._id.replace(/^[\w]+\./, ''); if (!nameOf[s]) { nameOf[s] = it.DisplayName; idOf[s] = it._id; kindOf[s] = it._kind; } }
+  for (const q of QOL_BY_ID.values()) {
+    const s = q._id.replace(/^[\w]+\./, '');
+    if (!nameOf[s]) { nameOf[s] = q.DisplayName; idOf[s] = q._id; kindOf[s] = 'QoL'; }
+    tagsOf[s] = q._tags; catOf[s] = q._cat; if (q._note) noteOf[s] = q._note;
+    tagsOf[q._id] = q._tags; catOf[q._id] = q._cat; if (q._note) noteOf[q._id] = q._note;
+  }
+  const rooms = new Map(), pools = new Map(), finder = new Map(), roomByKey = new Map(), poolByKey = new Map();
+  for (const [key, entries] of Object.entries(sp)) {
+    for (const e of entries) {
+      const item = { short: key, disp: nameOf[key] || key, id: idOf[key] || null, kind: kindOf[key] || null, w: e.weight, tags: tagsOf[key] || [] };
+      const rm = e.where.match(/^room "([^"]+)" → (\w+)$/);
+      if (rm) {
+        const rk = rm[1] + '|' + e.mod;
+        if (!rooms.has(rk)) rooms.set(rk, { room: rm[1], cont: rm[2], mod: e.mod, items: [], locs: roomLocs(rm[1]) });
+        rooms.get(rk).items.push(item);
+        roomByKey.set(rk, rooms.get(rk));
+      } else {
+        const pk = e.where + '|' + e.mod;
+        if (!pools.has(pk)) pools.set(pk, { where: e.where, mod: e.mod, hint: poolHint(e.where), items: [], mods: new Set([e.mod]) });
+        pools.get(pk).items.push(item);
+        poolByKey.set(pk, pools.get(pk));
+      }
+      if (!finder.has(key)) finder.set(key, {
+        short: key, disp: nameOf[key] || key, id: idOf[key] || null, kind: kindOf[key] || null,
+        mod: e.mod, spots: [], tags: tagsOf[key] || [], cat: catOf[key] || null, note: noteOf[key] || null,
+      });
+      finder.get(key).spots.push(e);
+    }
+  }
+  return { rooms: [...rooms.values()], pools: [...pools.values()], finder: [...finder.values()], roomByKey, poolByKey, nameOf, idOf, tagsOf };
+}
+function ensureLoot() { if (!LOOT) LOOT = lootData(); }
+
+// ---------- dossier (chests / rooms / pools only) ----------
+function showPanel(html) {
+  const el = document.getElementById('dossier');
+  el.querySelector('.dcard').innerHTML = html;
+  el.classList.add('open');
+}
+function closeDossier() { document.getElementById('dossier').classList.remove('open'); }
+
+function openChestPanel(idx) {
+  const c = GUIDE_ECON.chests[idx];
+  if (!c) return;
+  const label = cleanChestName(c.name);
+  let h = `<button class="dclose" onclick="closeDossier()">✕ close</button>
+    <h2>${c.icon ? `<img class="chest-ico" src="${esc(c.icon)}" alt="">` : '🎁 '}${esc(label)}</h2>
+    <div class="dmeta">${c.perOpen} item${c.perOpen > 1 ? 's' : ''} per open · ${c.items.length} possible · ${c.groups.map(g => esc(g.name) + ' ' + g.chance + '%').join(' / ')}</div>`;
+  if (c.buy > 0) {
+    const pieces = c.groups.find(g => /piece/i.test(g.name));
+    const ev = pieces ? ` · ~${Math.round(c.buy / (c.perOpen * pieces.chance / 100)).toLocaleString()} HC/piece` : '';
+    h += `<div class="note hot"><h3>Shop price</h3><div class="prose"><b>${c.buy.toLocaleString()} HC</b> per chest${ev}. Purchased via the <a href="http://158.69.127.148:3001/" target="_blank" rel="noopener">Discord chest shop ↗</a> — live prices may differ slightly.</div></div>`;
+  } else {
+    h += `<div class="note"><h3>Craft-only chest</h3><div class="prose">Cannot be bought with HC — assembled from <b>chest pieces</b> earned from other tiers.</div></div>`;
+  }
+  h += `<div class="dsec">Drop groups — chance per item slot</div><div class="statgrid">` +
+    c.groups.map(g => `<div><b>${esc(g.name)}</b>${g.chance}%</div>`).join('') + `</div>`;
+  h += `<div class="dsec">Full item pool (${c.items.length})</div>` + chestItemGrid(c.items);
+  showPanel(h);
+}
+
+function openRoomPanel(key) {
+  ensureLoot();
+  const r = LOOT.roomByKey.get(key);
+  if (!r) return;
+  let h = `<button class="dclose" onclick="closeDossier()">✕ close</button>
+    <h2>room "${esc(r.room)}"</h2>
+    <div class="dmeta">${esc(r.cont)} container · ${esc(r.mod)} map</div>`;
+  if (r.locs.length) { h += `<div class="dsec">Coordinates</div>`; for (const L of r.locs) h += locCard(L); }
+  else h += `<div class="note"><h3>No coords</h3>Room is on the <b>${esc(r.mod)}</b> map — cell not in parsed files.</div>`;
+  h += `<div class="dsec">Loot (${r.items.length})</div>` + itemGrid(r.items);
+  showPanel(h);
+}
+
+function openPoolPanel(key) {
+  ensureLoot();
+  const p = LOOT.poolByKey.get(key);
+  if (!p) return;
+  let h = `<button class="dclose" onclick="closeDossier()">✕ close</button>
+    <h2>${esc(p.where)}</h2>
+    <div class="dmeta">${p.items.length} items · from ${[...p.mods].map(esc).join(', ')}</div>
+    <div class="note ${p.hint ? 'hot' : ''}"><h3>Locations</h3>${p.hint ? `Pool for <b>${esc(p.hint)}</b> — any matching building on any map.` : 'Vanilla container pool — scatter spawn across matching buildings.'}</div>
+    <div class="dsec">Items (${p.items.length})</div>` + itemGrid(p.items);
+  showPanel(h);
+}
+
+function copyToast(text) {
+  navigator.clipboard?.writeText(text);
+  const t = document.getElementById('toast');
+  t.textContent = 'Copied: ' + text;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 1800);
+}
+window.copyToast = copyToast;
+window.closeDossier = closeDossier;
+
+window.GUIDE_FN = { opFor, mergeSpawns, spawnLocHTML, whereCards, tagHTML, esc };
+window.GUIDE_DETAILS = GUIDE_DETAILS;
+
+// ---------- tabs ----------
+const charSubs = {
+  Melee: () => {
+    const rows = DEDUP.filter(i => i._kind === 'Melee');
+    const w = document.createElement('div');
+    w.append(secHead('Melee Weapons'), tableSection(tableView(rows, gearCols('Melee')), '_avg'));
+    return w;
+  },
+  Guns: () => {
+    const rows = DEDUP.filter(i => i._kind === 'Gun');
+    const w = document.createElement('div');
+    w.append(secHead('Guns'), tableSection(tableView(rows, gearCols('Gun')), '_avg'));
+    return w;
+  },
+  Attachments: () => {
+    const rows = DEDUP.filter(i => i._kind === 'WeaponPart');
+    const w = document.createElement('div');
+    w.append(secHead('Attachments'), tableSection(tableView(rows, gearCols('WeaponPart')), 'HitChanceModifier'));
+    return w;
+  },
+  Armor: () => {
+    const rows = DEDUP.filter(i => i._kind === 'Clothing' && i._prot > 0);
+    const w = document.createElement('div');
+    w.append(secHead('Armor'), notes(INTEL.armor), secHead('All Protective Clothing'), tableSection(tableView(rows, gearCols('Clothing')), 'BiteDefense'));
+    return w;
+  },
+  Packs: () => {
+    const rows = DEDUP.filter(i => i._kind === 'Container' && i._loc);
+    const w = document.createElement('div');
+    w.append(secHead('Containers'), notes(INTEL.slots), secHead('All Wearable Containers'), tableSection(tableView(rows, gearCols('Container')), 'Capacity'));
+    return w;
+  },
+  Clothing: () => {
+    const rows = I.filter(i => i._kind === 'Clothing');
+    const w = document.createElement('div');
+    w.append(secHead('All Clothing'), tableSection(tableView(rows, gearCols('Clothing')), 'DisplayName'));
+    w.insertAdjacentHTML('beforeend', '<p class="count">Every clothing piece including color variants — click any name for full wiki page.</p>');
+    return w;
+  },
+};
+
+const econSubs = {
+  'Earning HC': () => { const d = document.createElement('div'); d.append(secHead('Earning HC'), notes(ECON_INTEL.earning)); return d; },
+  Chests: () => {
+    const d = document.createElement('div');
+    d.append(secHead('Chests'), notes(ECON_INTEL.chests), secHead('Chest catalog'));
+    const grid = document.createElement('div'); grid.className = 'chestgrid';
+    GUIDE_ECON.chests.forEach((c, idx) => {
+      const pieces = c.groups.find(g => /piece/i.test(g.name));
+      const ev = (c.buy > 0 && pieces) ? `~${Math.round(c.buy / (c.perOpen * pieces.chance / 100)).toLocaleString()} HC/piece` : '';
+      const label = cleanChestName(c.name);
+      const card = document.createElement('div');
+      card.className = 'chestcard';
+      card.dataset.chest = idx;
+      card.innerHTML = `${c.icon ? `<img src="${esc(c.icon)}" loading="lazy" alt="">` : '<span style="font-size:40px">🎁</span>'}
+        <div class="ct"><div class="cn">${esc(label)} ▸</div>
+          <div class="cmeta">${c.perOpen} item${c.perOpen > 1 ? 's' : ''} per open · ${c.items.length} possible · ${c.groups.map(g => esc(g.name) + ' ' + g.chance + '%').join(' / ')}${ev ? ' · ' + ev : ''}</div></div>
+        <div class="cp" style="color:${c.buy > 0 ? 'var(--gold)' : 'var(--accent)'}">${c.buy > 0 ? c.buy.toLocaleString() + ' HC' : 'Pieces only'}</div>`;
+      grid.append(card);
+    });
+    d.append(grid);
+    return d;
+  },
+  Quests: () => {
+    const d = document.createElement('div');
+    const rows = GUIDE_ECON.quests.map(q => {
+      const npcKey = Object.keys(GUIDE_ECON.npcs).find(n => q.id.includes(n) || q.file.includes(n));
+      const pos = npcKey ? GUIDE_ECON.npcs[npcKey][GUIDE_ECON.npcs[npcKey].length - 1] : null;
+      const giver = npcKey ? (GUIDE_ECON.npcs[npcKey][0]?.npc || npcKey) : q.file;
+      return {
+        _id: q.id, _src: q.file, DisplayName: q.id, _giver: giver,
+        _where: pos ? `${pos.x},${pos.y}` : '',
+        _obj: q.objectives,
+        _rew: q.rewards.map(r => `${r.item.replace(/^\w+\./, '')}×${r.count}${r.rarity ? ' [' + r.rarity + ']' : ''}`).join(', '),
+        _exp: q.exp.join(', '), _hc: q.hc || 0, _j: q.journal,
+      };
+    });
+    d.append(secHead('Quests'), notes(ECON_INTEL.quests), secHead('All quests'));
+    d.append(econTable(rows, [
+      { k: 'DisplayName', h: 'Quest', cls: 'name', f: r => esc(r.DisplayName) + (/Legendary|VehicleKey/i.test(r._rew) ? ' <span class="badge op">big reward</span>' : '') + (r._j ? ` <span class="count" title="${esc(r._j)}">📓</span>` : '') },
+      { k: '_giver', h: 'Giver' },
+      { k: '_where', h: 'NPC at', f: r => coordCell(r._where) },
+      { k: '_obj', h: 'Objectives', cls: 'wrap', f: r => r._obj.length ? `<ul class="tight">${r._obj.map(o => `<li>${esc(o)}</li>`).join('')}</ul>` : '<span class="count">(scripted)</span>' },
+      { k: '_rew', h: 'Rewards', cls: 'rewards', f: r => {
+        const bits = [];
+        if (r._hc) bits.push(`<span class="rewline hc">${r._hc.toLocaleString()} HC</span>`);
+        if (r._exp) bits.push(`<span class="rewline">${esc(r._exp)} XP</span>`);
+        if (r._rew) bits.push(`<span class="rewline">${esc(r._rew)}</span>`);
+        return bits.join('') || '<span class="count">—</span>';
+      }},
+    ], 'DisplayName'));
+    return d;
+  },
+  Outposts: () => {
+    const d = document.createElement('div');
+    const rows = GUIDE_ECON.outposts.map(o => ({
+      _id: o.id, DisplayName: o.name || o.id, _src: o.type || 'outpost',
+      _where: o.x != null ? `${o.x},${o.y}` : '',
+      _interval: o.intervalDays, _count: o.rewardCount,
+      _pool: (o.rewards || []).map(r => `${r.item} w${r.w}`).join('; '),
+    }));
+    d.append(secHead('Outposts'), notes(ECON_INTEL.outposts), secHead('All outposts'));
+    d.append(econTable(rows, [
+      { k: 'DisplayName', h: 'Outpost', cls: 'name', f: r => esc(r.DisplayName) },
+      { k: '_src', h: 'Type' },
+      { k: '_where', h: 'Center', f: r => coordCell(r._where) },
+      { k: '_interval', h: 'Days', num: 1 },
+      { k: '_count', h: 'Items', num: 1 },
+      { k: '_pool', h: 'Reward pool', cls: 'wrap', f: r => `<span class="count">${esc(r._pool)}</span>` },
+    ], 'DisplayName'));
+    return d;
+  },
+};
+
+const lootSubs = {
+  'Hotspot Rooms': () => {
+    ensureLoot();
+    const rows = LOOT.rooms.map((r, i) => {
+      const key = r.room + '|' + r.mod;
+      const hasCoords = r.locs.length > 0;
+      return {
+        _id: key, DisplayName: r.room, _src: r.mod, _cont: r.cont, _n: r.items.length,
+        _pin: hasCoords ? '📍 ' + r.locs.length + ' coords' : 'map area',
+        _sort: hasCoords ? 1 : 0,
+      };
+    });
+    const d = document.createElement('div');
+    const notesEl = document.createElement('div');
+    notesEl.append(secHead('Loot'), notes(LOOT_INTEL));
+    d.append(notesEl);
+    const roomTable = tableSection(tableView(rows, [
+      { k: 'DisplayName', h: 'Room', cls: 'name', f: r => `<span data-room="${esc(r._id)}" style="cursor:pointer">${esc(r.DisplayName)} ▸</span>` },
+      { k: '_cont', h: 'Container' },
+      { k: '_pin', h: 'Location' },
+      { k: '_n', h: 'Items', num: 1 },
+      { k: '_src', h: 'Map mod', cls: 'mod' },
+    ]), '_sort');
+    d.append(secHead('Hotspot rooms'), roomTable);
+    d.insertAdjacentHTML('beforeend', '<p class="count">Click a room for coords and full loot list. 📍 = parsed coordinates.</p>');
+    return d;
+  },
+  'Container Pools': () => {
+    ensureLoot();
+    const rows = LOOT.pools.map(p => ({
+      _id: p.where + '|' + p.mod, DisplayName: p.where, _src: p.mod, _n: p.items.length,
+      _hint: p.hint || '',
+    }));
+    const d = document.createElement('div');
+    d.append(secHead('Container pools'), tableSection(tableView(rows, [
+      { k: 'DisplayName', h: 'Pool', cls: 'name wrap', f: r => `<span data-pool="${esc(r._id + '|' + r._src)}" style="cursor:pointer">${esc(r.DisplayName)} ▸</span>` },
+      { k: '_hint', h: 'Building type', cls: 'wrap', f: r => r._hint ? esc(r._hint) : '<span class="count">—</span>' },
+      { k: '_n', h: 'Items', num: 1 },
+      { k: '_src', h: 'Mod', cls: 'mod' },
+    ]), '_n'));
+    d.insertAdjacentHTML('beforeend', '<p class="count">Container pools include vanilla (BlacksmithMolds, MetalShop…) and mod injections. Click a pool for its full item list.</p>');
+    return d;
+  },
+  'QoL & Tools': () => {
+    ensureLoot();
+    const spawnSet = new Set(LOOT.finder.map(r => r.short));
+    const rows = GUIDE_QOL.items.filter(q => spawnSet.has(q._id.replace(/^[\w]+\./, '')) || q._star).map(q => {
+      const short = q._id.replace(/^[\w]+\./, '');
+      const hit = LOOT.finder.find(r => r.short === short);
+      let coords = 0, pool = 0;
+      if (hit) for (const s of hit.spots) { const rm = s.where.match(/^room "([^"]+)"/); if (rm && roomLocs(rm[1]).length) coords++; else if (!rm) pool++; }
+      return {
+        _id: q._id, _src: q._src, DisplayName: q.DisplayName, _cat: q._cat, _tags: q._tags, _note: q._note, _star: q._star,
+        _pin: hit ? (coords ? '📍 exact' : pool ? '📦 pools' : 'room') : 'craft/shop?',
+        _n: hit ? hit.spots.length : 0, _prio: q._star ? 2 : (coords ? 1 : 0), _where: q._where,
+      };
+    });
+    const d = document.createElement('div');
+    d.append(secHead('Utility & Crafting'), notes([
+      { h: 'Molds', hot: true, t: 'Clay/ceramic = <code>breakonsmithing</code>. Iron/steel molds are permanent. Filter <b>Smithing & Forging</b>.' },
+      { h: 'Tags', t: 'Click tag chips to filter. ★ items have spawn notes in their dossier.' },
+    ]), secHead('Tagged items'));
+    d.append(lootTableSection(tableView(rows, [
+      { k: 'DisplayName', h: 'Item', cls: 'name', f: r => {
+        const star = r._star ? ' star' : '';
+        return `<a class="ilink${star}" data-id="${esc(r._id)}">${esc(r.DisplayName)}</a>`;
+      }},
+      { k: '_where', h: 'Top spawn', cls: 'wrap', f: r => r._where?.length ? `<span class="count">${esc(r._where[0].replace(/<[^>]+>/g, '').slice(0, 90))}${r._where[0].length > 90 ? '…' : ''}</span>` : '<span class="count">craft/shop</span>' },
+      { k: '_tags', h: 'Tags', f: r => tagHTML(r._tags) },
+      { k: '_cat', h: 'Category', f: r => r._cat ? esc(r._cat) : '<span class="count">—</span>' },
+      { k: '_pin', h: 'Spawn data' },
+      { k: '_n', h: 'Spawns', num: 1 },
+      { k: '_src', h: 'Source', cls: 'mod' },
+    ]), '_prio', '_tags', 'smithing'));
+    return d;
+  },
+  'Item Finder': () => {
+    ensureLoot();
+    const rows = LOOT.finder.map(r => {
+      let coords = 0, pool = 0;
+      for (const s of r.spots) { const rm = s.where.match(/^room "([^"]+)"/); if (rm && roomLocs(rm[1]).length) coords++; else if (!rm) pool++; }
+      return {
+        _id: r.id || r.short, _src: r.mod, DisplayName: r.disp, _kind: r.kind, _n: r.spots.length,
+        _pin: coords ? '📍 ' + coords + ' exact' : (pool ? '📦 ' + pool + ' pool' + (pool > 1 ? 's' : '') : 'room only'),
+        _exact: coords, _tags: r.tags || [], _cat: r.cat,
+      };
+    });
+    const d = document.createElement('div');
+    d.append(secHead('Find Any Item → Where It Spawns'), lootTableSection(tableView(rows, [
+      { k: 'DisplayName', h: 'Item', cls: 'name', f: r => {
+        const em = kindEmoji(r._kind);
+        const linked = r._id && (BY_ID.has(r._id) || QOL_BY_ID.has(r._id));
+        const inner = linked ? `<a class="ilink" data-id="${esc(r._id)}">${esc(r.DisplayName)}</a>` : esc(r.DisplayName);
+        return `<span class="em" style="margin-right:5px">${em}</span>${inner}`;
+      }},
+      { k: '_tags', h: 'Tags', f: r => tagHTML(r._tags) },
+      { k: '_cat', h: 'Category', f: r => r._cat ? esc(r._cat) : '<span class="count">—</span>' },
+      { k: '_pin', h: 'Location data' },
+      { k: '_n', h: 'Spawns', num: 1 },
+      { k: '_src', h: 'Mod', cls: 'mod' },
+    ]), '_exact', '_tags', ''));
+    d.insertAdjacentHTML('beforeend', '<p class="count">Click an item for spawn locations, recipes, and notes. Use tag filters to narrow — e.g. <b>Smithing & Forging</b> for iron bar molds vs breakable clay molds.</p>');
+    return d;
+  },
+};
+
+function vehTab() {
+  const d = document.createElement('div');
+  d.append(secHead('Special vehicles'), notes(VEH_INTEL));
+  const rows = GUIDE_VEH.vehicles.filter(v => !/burnt|wreck|smashed|junkyard|destroyed/i.test(v.name + ' ' + (v.display || '')));
+  d.append(secHead('All vehicles'), tableSection(tableView(rows.map(v => ({
+    _id: v.name, DisplayName: v.display || v.name, _src: v.mod,
+    maxSpeed: v.maxSpeed, seats: v.seatsDeclared || v.seats, trunk: v.trunk, storage: v.storage,
+    offRoad: v.offRoad, mass: v.mass,
+  })), [
+    { k: 'DisplayName', h: 'Vehicle', cls: 'name', f: r => `<span data-veh="${esc(r._id)}" style="cursor:pointer;color:var(--blue);border-bottom:1px dotted var(--blue)">${esc(r.DisplayName)}</span>` },
+    { k: 'maxSpeed', h: 'Top speed', num: 1 },
+    { k: 'seats', h: 'Seats', num: 1 },
+    { k: 'trunk', h: 'Trunk', num: 1 },
+    { k: 'storage', h: 'Total storage', num: 1 },
+    { k: 'offRoad', h: 'Off-road', num: 1 },
+    { k: '_src', h: 'Mod', cls: 'mod' },
+  ]), 'maxSpeed'));
+  d.insertAdjacentHTML('beforeend', '<p class="count">Click a vehicle name for full wiki page with stats.</p>');
+  return d;
+}
+
+const TABS = {
+  Overview: () => {
+    const w = document.createElement('div');
+    w.innerHTML = `<div class="note"><h3>HellDrinx Field Guide</h3><div class="prose"><b>${I.length.toLocaleString()}</b> items from <b>${GUIDE_DATA.mods.length}</b> mods. Click any name for spawns, recipes, and stats.</div></div>`;
+    const strip = document.createElement('div');
+    strip.innerHTML = `<div class="sechead">Map pins</div><div class="opstrip">` +
+      MAP_PINS.map(g => { const hit = pinItem(g); return hit ? `<a class="ilink" data-id="${esc(hit._id)}">${esc(g.label)}</a>` : ''; }).join('') + '</div>';
+    const sh = document.createElement('div'); sh.className = 'sechead'; sh.textContent = 'Overview';
+    const notesEl = document.createElement('div');
+    notesEl.append(sh, notes(INTEL.overview));
+    w.append(strip, notesEl);
+    return w;
+  },
+  Character: () => charSubs.Melee(),
+  Economy: () => econSubs['Earning HC'](),
+  Vehicles: () => vehTab(),
+  Loot: () => lootSubs['Hotspot Rooms'](),
+};
+
+const SUBS = {
+  Character: charSubs,
+  Economy: econSubs,
+  Loot: lootSubs,
+};
+
+const tabsEl = document.getElementById('tabs');
+const subnavEl = document.getElementById('subnav');
+const mainEl = document.getElementById('main');
+let currentTab = 'Overview', currentSub = null;
+
+function showSubnav(tab) {
+  subnavEl.innerHTML = '';
+  const subs = SUBS[tab];
+  if (!subs) { subnavEl.style.display = 'none'; return; }
+  subnavEl.style.display = 'flex';
+  const keys = Object.keys(subs);
+  if (!currentSub || !keys.includes(currentSub)) currentSub = keys[0];
+  for (const k of keys) {
+    const b = document.createElement('button');
+    b.textContent = k;
+    if (k === currentSub) b.classList.add('on');
+    b.onclick = () => {
+      currentSub = k;
+      subnavEl.querySelectorAll('button').forEach(x => x.classList.remove('on'));
+      b.classList.add('on');
+      mainEl.innerHTML = '';
+      mainEl.append(subs[k]());
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+    subnavEl.append(b);
+  }
+}
+
+function showTab(name) {
+  currentTab = name;
+  GUIDE_BOOT.lastTab = name;
+  currentSub = null;
+  document.body.classList.remove('wiki-mode');
+  tabsEl.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.tab === name));
+  showSubnav(name);
+  mainEl.innerHTML = '';
+  const subs = SUBS[name];
+  if (subs) {
+    const keys = Object.keys(subs);
+    currentSub = keys[0];
+    subnavEl.querySelectorAll('button').forEach((b, i) => b.classList.toggle('on', i === 0));
+    mainEl.append(subs[keys[0]]());
+  } else {
+    mainEl.append(TABS[name]());
+  }
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+window.GUIDE_BOOT = { showTab, lastTab: 'Overview' };
+
+for (const k of Object.keys(TABS)) {
+  const b = document.createElement('button');
+  b.textContent = k;
+  b.dataset.tab = k;
+  if (k === 'Overview') b.classList.add('on');
+  b.onclick = () => { GUIDE_BOOT.lastTab = k; showTab(k); };
+  tabsEl.append(b);
+}
+
+document.getElementById('genInfo').textContent =
+  `HellDrinx server guide · ${I.length.toLocaleString()} items · ${GUIDE_DATA.mods.length} mods`;
+
+document.getElementById('dossier').onclick = e => { if (e.target.id === 'dossier') closeDossier(); };
+
+document.addEventListener('click', e => {
+  const cp = e.target.closest('[data-copy]');
+  if (cp) { copyToast(cp.dataset.copy); e.stopPropagation(); return; }
+  const ch = e.target.closest('[data-chest]');
+  if (ch) { openChestPanel(+ch.dataset.chest); return; }
+  const rm = e.target.closest('[data-room]');
+  if (rm) { openRoomPanel(rm.dataset.room); return; }
+  const pl = e.target.closest('[data-pool]');
+  if (pl) { openPoolPanel(pl.dataset.pool); return; }
+  const veh = e.target.closest('[data-veh]');
+  if (veh) { WIKI.open(veh.dataset.veh, { kind: 'vehicle' }); return; }
+  const a = e.target.closest('a.ilink');
+  if (a?.dataset.id) { WIKI.open(a.dataset.id); return; }
+});
+
+showTab('Overview');

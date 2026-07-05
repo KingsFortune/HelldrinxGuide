@@ -1,0 +1,10 @@
+# Generated / local
+tools/_replaces.json
+tools/_reconstruct_info.json
+tools/_frag_*.txt
+tools/extract_transcript.mjs
+tools/reconstruct.mjs
+
+# OS
+.DS_Store
+Thumbs.db

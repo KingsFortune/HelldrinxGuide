@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>HellDrinx Wiki</title>
+<script>
+  const seg = location.pathname.replace(/\/+$/, '').split('/').filter(Boolean);
+  const last = seg[seg.length - 1];
+  if (seg[0] === 'i' || seg[0] === 'v') {
+    // share stub should handle this; fallback to wiki hash
+    const id = last.replace(/--/g, '.').replace(/_/g, '.');
+    location.replace(location.origin + location.pathname.replace(/\/i\/[^/]+.*/,'').replace(/\/v\/[^/]+.*/,'') + '/#' + (seg[0] === 'v' ? 'wiki/vehicle/' : 'wiki/item/') + encodeURIComponent(id));
+  } else {
+    location.replace('index.html' + location.hash + location.search);
+  }
+</script>
+</head>
+<body><a href="index.html">HellDrinx Wiki</a></body>
+</html>
