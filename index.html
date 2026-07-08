@@ -215,6 +215,18 @@ td.rewards { max-width: 260px; line-height: 1.55; }
 .bp-tip .tconf { color: #e08070; margin-top: 5px; font-size: 11px; }
 .bp-intro { background: var(--pz-panel); border: 1px solid var(--pz-border); border-radius: 4px; padding: 10px 14px; margin-bottom: 12px; font-size: 13px; color: var(--pz-dim); }
 .bp-intro b { color: var(--pz-text); }
+.bp-detail-head { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 8px; }
+.bp-detail-head img { width: 48px; height: 48px; object-fit: contain; flex: none; }
+.bp-detail-head .ph { width: 48px; height: 48px; background: #1a1510; border: 1px solid var(--pz-border); border-radius: 3px; display: flex; align-items: center; justify-content: center; font-size: 20px; color: var(--pz-dim); flex: none; }
+.bp-detail-head .meta { flex: 1; min-width: 0; }
+.bp-detail-head .dn { font-weight: 700; color: #eee; font-size: 14px; line-height: 1.2; }
+.bp-detail-head .dc { font-size: 12px; font-weight: 800; margin-top: 2px; }
+.bp-detail-desc { font-size: 12.5px; line-height: 1.55; color: var(--pz-text); margin-bottom: 8px; }
+.bp-detail-mech .lbl { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: var(--pz-gold); margin-bottom: 4px; font-weight: 700; }
+.bp-detail-mech ul { margin: 0; padding-left: 16px; font-size: 12px; line-height: 1.5; color: #b8c8d8; }
+.bp-detail-mech li { margin: 2px 0; }
+.bp-detail-mod { font-size: 10px; color: var(--pz-dim); margin-top: 6px; }
+.pz-trait.preview, .bp-occ.preview { outline: 1px solid var(--pz-gold); box-shadow: 0 0 0 1px var(--pz-gold); }
 </style>
 </head>
 <body>
@@ -881,26 +893,46 @@ window.GUIDE_DETAILS = GUIDE_DETAILS;
 
 // ---------- tabs ----------
 // ---------- Build Planner ----------
-const BP = { occId: 'unemployed', sel: new Set() };
+const BP = { occId: 'unemployed', sel: new Set(), preview: null };
 function bpBoostStr(boosts) { return (boosts || []).map(b => `${b.skill} ${b.n > 0 ? '+' : ''}${b.n}`).join(', '); }
-function bpIco(el, src, ph) {
-  if (src) { const img = document.createElement('img'); img.src = src; img.alt = ''; img.loading = 'lazy'; el.append(img); }
-  else { const d = document.createElement('div'); d.className = ph; d.textContent = '?'; el.append(d); }
+
+function bpRenderDetail(item, kind) {
+  if (!item) return '<span class="count">Hover a trait or occupation for full details.</span>';
+  const costClr = item.cost > 0 ? '#7ec87a' : item.cost < 0 ? '#e08070' : 'var(--pz-gold)';
+  const ico = item.icon ? `<img src="${esc(item.icon)}" alt="">` : `<div class="ph">${esc(item.name.charAt(0))}</div>`;
+  let h = `<div class="bp-detail-head">${ico}<div class="meta"><div class="dn">${item.special ? '★ ' : ''}${esc(item.name)}</div><div class="dc" style="color:${costClr}">${item.cost > 0 ? '+' : ''}${item.cost} points</div></div></div>`;
+  if (item.desc) h += `<div class="bp-detail-desc">${esc(item.desc)}</div>`;
+  if (item.mechanics?.length) {
+    h += `<div class="bp-detail-mech"><div class="lbl">Mechanics</div><ul>${item.mechanics.map(m => `<li>${esc(m)}</li>`).join('')}</ul></div>`;
+  } else if (item.boosts?.length || item.effective?.length) {
+    const boosts = item.boosts || item.effective;
+    h += `<div class="bp-detail-mech"><div class="lbl">Starting skills</div><ul>${boosts.map(b => `<li>${esc(b.skill)}: ${b.n > 0 ? '+' : ''}${b.n}</li>`).join('')}</ul></div>`;
+  }
+  if (item.recipes?.length) {
+    h += `<div class="bp-detail-mech"><div class="lbl">Recipes (${item.recipes.length})</div><ul>${item.recipes.slice(0, 10).map(r => `<li>${esc(r)}</li>`).join('')}${item.recipes.length > 10 ? '<li>…</li>' : ''}</ul></div>`;
+  }
+  if (item.mod) h += `<div class="bp-detail-mod">Source: ${esc(item.mod)}</div>`;
+  return h;
 }
+
 let bpTip;
 function bpShowTip(t, x, y) {
   if (!bpTip) { bpTip = document.createElement('div'); bpTip.className = 'bp-tip'; document.body.appendChild(bpTip); }
-  const conf = (t.conflicts || []).map(id => (GUIDE_TRAITS.traits.find(z => z.id === id) || {}).name || id).filter(Boolean);
   bpTip.innerHTML = `<div class="tt">${t.special ? '★ ' : ''}${esc(t.name)} <span style="color:${t.cost > 0 ? '#7ec87a' : '#e08070'}">(${t.cost > 0 ? '+' : ''}${t.cost})</span></div>
-    ${t.desc ? `<div>${esc(t.desc)}</div>` : '<div style="color:var(--pz-dim)">No description.</div>'}
-    ${t.boosts ? `<div class="tbo">${esc(bpBoostStr(t.boosts))}</div>` : ''}
-    ${t.recipes ? `<div class="tbo">Recipes: ${esc(t.recipes.slice(0, 8).join(', '))}${t.recipes.length > 8 ? '…' : ''}</div>` : ''}
-    ${conf.length ? `<div class="tconf">Conflicts: ${esc(conf.join(', '))}</div>` : ''}`;
+    ${t.desc ? `<div>${esc(t.desc.length > 160 ? t.desc.slice(0, 157) + '…' : t.desc)}</div>` : ''}
+    ${t.mechanics?.length ? `<div class="tbo">${esc(t.mechanics.slice(0, 3).join(' · '))}</div>` : ''}`;
   bpTip.classList.add('show');
   const px = Math.min(x + 14, window.innerWidth - 290), py = Math.min(y + 14, window.innerHeight - (bpTip.offsetHeight || 120) - 10);
   bpTip.style.left = px + 'px'; bpTip.style.top = py + 'px';
 }
 function bpHideTip() { if (bpTip) bpTip.classList.remove('show'); }
+function bpSetPreview(item, kind, cards, occEls) {
+  BP.preview = item ? { item, kind } : null;
+  const det = document.getElementById('bpDetail');
+  if (det) det.innerHTML = bpRenderDetail(item, kind);
+  if (cards) for (const [, el] of cards) el.classList.remove('preview');
+  if (occEls) for (const [, el] of occEls) el.classList.remove('preview');
+}
 
 function bpTab() {
   if (typeof GUIDE_TRAITS === 'undefined') { const d = document.createElement('div'); d.className = 'note'; d.textContent = 'Trait data not loaded — run node tools/parse_traits.mjs'; return d; }
@@ -910,7 +942,7 @@ function bpTab() {
   wrap.className = 'bp-shell';
 
   const intro = document.createElement('div'); intro.className = 'bp-intro';
-  intro.innerHTML = `Plan a <b>HellDrinx</b> character — pick occupation, then traits. Positive traits <b>cost</b> points; negative traits <b>refund</b> points. <b>Points must stay ≥ 0.</b> Hover for details. ★ = server-unique mod content. <span class="count">${TR.length} traits · ${PR.length} occupations</span>`;
+  intro.innerHTML = `Plan a <b>HellDrinx</b> character — pick occupation, then traits. Hover any trait or occupation for a <b>full description + mechanics breakdown</b> in the sidebar. ★ = server-unique mod content. <span class="count">${TR.length} traits · ${PR.length} occupations · ${GUIDE_TRAITS.stats?.withDesc || ''} with descriptions</span>`;
   wrap.append(intro);
 
   const top = document.createElement('div'); top.className = 'bp-top';
@@ -930,6 +962,7 @@ function bpTab() {
   wrap.append(grid);
 
   side.innerHTML = `
+    <div class="bp-card"><h4>Details</h4><div id="bpDetail"><span class="count">Hover a trait or occupation…</span></div></div>
     <div class="bp-card"><h4>Occupation Info</h4><div id="bpOccInfo"><span class="count">Select an occupation above.</span></div></div>
     <div class="bp-card"><h4>Starting Skills</h4><div id="bpSkills"><span class="count">—</span></div></div>
     <div class="bp-card"><h4>Selected Traits</h4><div id="bpSel"><span class="count">None</span></div></div>`;
@@ -953,7 +986,9 @@ function bpTab() {
     el.append(ico);
     const nm = document.createElement('div'); nm.className = 'oname'; nm.textContent = p.name; el.append(nm);
     const co = document.createElement('div'); co.className = 'ocost'; co.textContent = (p.cost > 0 ? '+' : '') + p.cost; el.append(co);
-    el.addEventListener('click', () => { BP.occId = p.id; update(); });
+    el.addEventListener('mouseenter', () => { el.classList.add('preview'); bpSetPreview(p, 'prof'); });
+    el.addEventListener('mouseleave', () => { el.classList.remove('preview'); });
+    el.addEventListener('click', () => { BP.occId = p.id; bpSetPreview(p, 'prof'); update(); });
     occRow.append(el);
     occEls.set(p.id, el);
   }
@@ -969,10 +1004,10 @@ function bpTab() {
     el.append(ico);
     const nm = document.createElement('div'); nm.className = 'pz-tname'; nm.textContent = t.name; el.append(nm);
     const co = document.createElement('div'); co.className = 'pz-tcost ' + (t.cost > 0 ? 'pos' : 'neg'); co.textContent = (t.cost > 0 ? '+' : '') + t.cost; el.append(co);
-    el.addEventListener('mouseenter', e => bpShowTip(t, e.clientX, e.clientY));
+    el.addEventListener('mouseenter', e => { el.classList.add('preview'); bpSetPreview(t, 'trait'); bpShowTip(t, e.clientX, e.clientY); });
     el.addEventListener('mousemove', e => bpShowTip(t, e.clientX, e.clientY));
-    el.addEventListener('mouseleave', bpHideTip);
-    el.addEventListener('click', () => { if (el.classList.contains('disabled')) return; BP.sel.has(t.id) ? BP.sel.delete(t.id) : BP.sel.add(t.id); update(); });
+    el.addEventListener('mouseleave', () => { el.classList.remove('preview'); bpHideTip(); });
+    el.addEventListener('click', () => { if (el.classList.contains('disabled')) return; bpSetPreview(t, 'trait'); BP.sel.has(t.id) ? BP.sel.delete(t.id) : BP.sel.add(t.id); update(); });
     return el;
   };
 
@@ -989,7 +1024,7 @@ function bpTab() {
     const q = search.value.toLowerCase();
     for (const [id, c] of cards) {
       const t = byId.get(id);
-      c.style.display = (!q || t.name.toLowerCase().includes(q) || (t.boosts && bpBoostStr(t.boosts).toLowerCase().includes(q))) ? '' : 'none';
+      c.style.display = (!q || t.name.toLowerCase().includes(q) || (t.desc || '').toLowerCase().includes(q) || (t.mechanics || []).join(' ').toLowerCase().includes(q) || (t.boosts && bpBoostStr(t.boosts).toLowerCase().includes(q))) ? '' : 'none';
     }
   });
 
@@ -1011,10 +1046,8 @@ function bpTab() {
     }
     const occInfo = side.querySelector('#bpOccInfo');
     if (occ) {
-      let h = `<div style="font-weight:600;color:#d4c8b0;margin-bottom:4px">${esc(occ.name)} <span style="color:var(--pz-gold)">(${occ.cost > 0 ? '+' : ''}${occ.cost})</span></div>`;
-      if (occ.desc) h += `<div style="font-size:12px;color:var(--pz-dim);margin-bottom:6px">${esc(occ.desc)}</div>`;
-      if (occ.freeTraitNames) h += `<div style="font-size:11px"><span style="color:#7ec87a">Free:</span> ${esc(occ.freeTraitNames.join(', '))}</div>`;
-      if (occ.recipes) h += `<div style="font-size:11px;color:var(--pz-dim);margin-top:4px">${esc(occ.recipes.slice(0, 5).join(', '))}${occ.recipes.length > 5 ? '…' : ''}</div>`;
+      let h = `<div style="font-weight:600;color:#d4c8b0">${esc(occ.name)}</div>`;
+      if (occ.freeTraitNames) h += `<div style="font-size:11px;margin-top:4px"><span style="color:#7ec87a">Free traits:</span> ${esc(occ.freeTraitNames.join(', '))}</div>`;
       occInfo.innerHTML = h;
     }
     const skills = {};
@@ -1030,6 +1063,8 @@ function bpTab() {
   }
   wrap.addEventListener('click', e => { const rm = e.target.closest('[data-bpremove]'); if (rm) { BP.sel.delete(rm.dataset.bpremove); update(); } });
   update();
+  const startOcc = PR.find(p => p.id === BP.occId);
+  if (startOcc) bpSetPreview(startOcc, 'prof');
   return wrap;
 }
 
