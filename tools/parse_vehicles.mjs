@@ -1,4 +1,4 @@
-// Extracts vehicle definitions from all mods into vehicles.js
+// Extracts DETAILED vehicle definitions + spawn zones from all mods into vehicles.js
 // Usage: node parse_vehicles.mjs
 import { readdirSync, readFileSync, writeFileSync } from 'fs';
 import { join, dirname } from 'path';
@@ -28,57 +28,92 @@ function roots(modDir) {
   return r;
 }
 
-const vehicles = new Map(); // name -> record (later versions merge over)
-const names = new Map();    // IGUI_VehicleName<script> -> display
+const vehicles = new Map(); // name -> record
+const names = new Map();    // script name -> display
+const zones = {};           // vehicleId(short) -> { zone: {chance, mods:Set} }
+
+// which top-level vehicle stats to keep as numbers/strings
+const NUM_STATS = new Set([
+  'maxSpeed', 'engineForce', 'engineQuality', 'engineLoudness', 'enginePower', 'mass',
+  'brakingForce', 'rollInfluence', 'steeringIncrement', 'steeringClamp', 'wheelFriction',
+  'frontEndHealth', 'rearEndHealth', 'playerDamageProtection', 'offRoadEfficiency',
+  'engineRepairLevel', 'mechanicType', 'seats', 'suspensionStiffness', 'maxSuspensionTravelCm',
+  'gearRatioCount',
+]);
+const STR_STATS = new Set(['engineRPMType']);
+const num = v => parseFloat(String(v).replace(/f$/i, ''));
+
+function categorizePart(name) {
+  const n = name.toLowerCase();
+  if (/(browning|machinegun|muzzle|turret|turrent|cannon|weapon|m2\b|ammo)/.test(n)) return 'weapon';
+  if (/armor|armour|plate|shield/.test(n)) return 'armor';
+  if (/gastank|gas_tank|fueltank/.test(n)) return 'fuel';
+  if (/truckbed|trunk|glovebox|seat|storage|cargo/.test(n)) return 'storage';
+  if (/tire|wheel|track|brake|suspension/.test(n)) return 'wheels';
+  if (/engine|muffler|battery|radiator/.test(n)) return 'engine';
+  if (/door|hood/.test(n)) return 'door';
+  if (/window|windshield|windscreen/.test(n)) return 'window';
+  if (/headlight|light|lightbar|siren/.test(n)) return 'lights';
+  if (/heater|radio|antenna|gps|controller/.test(n)) return 'electronics';
+  return 'misc';
+}
 
 function parseVehicles(text, mod) {
   const lines = text.split('\n');
-  let cur = null, depth = 0, partStack = [];
+  let cur = null, depth = 0;
+  let partStack = [];   // [{name, depth}]
+  let inWheel = false, wheelDepth = 0;
   for (const raw of lines) {
     const line = raw.trim();
-    const vm = line.match(/^vehicle\s+([\w.]+)/i);
+    const vm = line.match(/^vehicle\s+([^\s{]+)/i);
     if (vm && depth === 0) {
-      cur = { name: vm[1], mod, seats: 0, trunk: 0, storage: 0 };
+      cur = { name: vm[1], mod, parts: [], wheelCount: 0, skins: 0, storageParts: [], stats: {} };
     }
     if (cur) {
-      const kv = line.match(/^(\w+)\s*=\s*([^,]+),?\s*$/);
+      const kv = line.match(/^(\w+)\s*=\s*([^,\n]+),?\s*$/);
       if (kv) {
-        const [, k, vRaw] = kv; const v = vRaw.trim();
+        const k = kv[1], v = kv[2].trim();
         if (depth === 1) {
-          if (k === 'maxSpeed') cur.maxSpeed = parseFloat(v);
-          else if (k === 'engineForce') cur.engineForce = parseFloat(v);
-          else if (k === 'engineQuality') cur.engineQuality = parseFloat(v);
-          else if (k === 'engineLoudness') cur.engineLoudness = parseFloat(v);
-          else if (k === 'mass') cur.mass = parseFloat(v);
-          else if (k === 'seats') cur.seatsDeclared = parseFloat(v);
-          else if (k === 'template' && !cur.template) cur.template = v;
-          else if (k === 'offRoadEfficiency') cur.offRoad = parseFloat(v);
+          if (NUM_STATS.has(k)) cur.stats[k] = num(v);
+          else if (STR_STATS.has(k)) cur.stats[k] = v;
         }
+        // capacity belongs to whatever part we're inside
         if (k === 'capacity' && partStack.length) {
-          const part = partStack[partStack.length - 1] || '';
-          const cap = parseFloat(v) || 0;
-          cur.storage += cap;
-          if (/truckbed|trailer/i.test(part)) cur.trunk += cap;
+          const p = partStack[partStack.length - 1];
+          p.capacity = (p.capacity || 0) + (num(v) || 0);
         }
-        if (k === 'protectionLevel') cur.protection = Math.max(cur.protection || 0, parseFloat(v) || 0);
       }
+      if (/^skin\b/.test(line)) cur.skins++;
+      const wm = line.match(/^wheel\s+\w+/i);
+      if (wm && !inWheel) { cur.wheelCount++; inWheel = true; wheelDepth = depth; }
       const pm = line.match(/^part\s+([\w*]+)/i);
-      if (pm) {
-        partStack.push(pm[1]);
-        if (/^Seat/i.test(pm[1])) cur.seats++;
-      }
+      if (pm) partStack.push({ name: pm[1], depth, capacity: 0 });
+
       for (const ch of line) {
         if (ch === '{') depth++;
         else if (ch === '}') {
           depth--;
-          if (partStack.length && depth <= partStack.length) partStack.pop();
+          if (inWheel && depth <= wheelDepth) inWheel = false;
+          if (partStack.length && depth <= partStack[partStack.length - 1].depth) {
+            const p = partStack.pop();
+            // record only "real" parts (top-level within vehicle, depth 1)
+            if (p.depth === 1) {
+              const cat = categorizePart(p.name);
+              cur.parts.push({ name: p.name, cat, cap: p.capacity || 0 });
+              if (p.capacity > 0) cur.storageParts.push({ name: p.name, cap: p.capacity, cat });
+            }
+          }
           if (depth === 0 && cur) {
             const prev = vehicles.get(cur.name);
             if (prev) {
-              // merge: keep numeric maxima / fill blanks (split defs across version files)
-              for (const [k, v] of Object.entries(cur)) if (v || !prev[k]) prev[k] = v || prev[k];
+              // roots are ordered common → media → 42 → 42.x, so `cur` is the newer/authoritative def.
+              // current overwrites scalar fields and stats; keep the longer parts list.
+              const merged = { ...prev, ...cur, stats: { ...prev.stats, ...cur.stats } };
+              if (cur.parts.length < prev.parts.length) { merged.parts = prev.parts; merged.storageParts = prev.storageParts; }
+              if (cur.skins < prev.skins) merged.skins = prev.skins;
+              vehicles.set(cur.name, merged);
             } else vehicles.set(cur.name, cur);
-            cur = null; partStack = [];
+            cur = null; partStack = []; inWheel = false;
           }
         }
       }
@@ -86,7 +121,19 @@ function parseVehicles(text, mod) {
   }
 }
 
-let fileCount = 0;
+function parseZones(text, mod) {
+  for (const m of text.matchAll(/VehicleZoneDistribution\.(\w+)\.vehicles\[\s*["']([^"']+)["']\s*\]\s*=\s*\{([^}]*)\}/g)) {
+    const zone = m[1], id = m[2].replace(/^Base\./, ''), body = m[3];
+    const cm = body.match(/spawnChance\s*=\s*([\d.]+)/);
+    const chance = cm ? parseFloat(cm[1]) : null;
+    if (!zones[id]) zones[id] = {};
+    if (!zones[id][zone]) zones[id][zone] = { chance: 0, mods: new Set() };
+    zones[id][zone].chance = Math.max(zones[id][zone].chance, chance || 0);
+    zones[id][zone].mods.add(mod);
+  }
+}
+
+let fileCount = 0, luaCount = 0;
 for (const pack of readdirSync(WORKSHOP, { withFileTypes: true }).filter(e => e.isDirectory())) {
   const modsDir = join(WORKSHOP, pack.name, 'mods');
   let mods;
@@ -98,9 +145,14 @@ for (const pack of readdirSync(WORKSHOP, { withFileTypes: true }).filter(e => e.
           if (f.endsWith('.txt') && /[\\\/]scripts[\\\/]/i.test(f)) {
             const t = readFileSync(f, 'utf8');
             if (/^\s*vehicle\s+[\w.]/m.test(t)) { fileCount++; parseVehicles(t, mod.name); }
+            for (const m of t.matchAll(/IGUI_VehicleName([^\s=]+?)\s*=\s*"([^"]*)"/g)) names.set(m[1], m[2]);
           } else if (f.endsWith('.txt') && /Translate[\\\/]EN[\\\/]/i.test(f)) {
             const t = readFileSync(f, 'utf8');
-            for (const m of t.matchAll(/IGUI_VehicleName([\w.]+?)\s*=\s*"([^"]*)"/g)) names.set(m[1], m[2]);
+            for (const m of t.matchAll(/IGUI_VehicleName([^\s=]+?)\s*=\s*"([^"]*)"/g)) names.set(m[1], m[2]);
+          } else if (f.endsWith('.lua')) {
+            // content-based: any lua that touches VehicleZoneDistribution, regardless of filename
+            const t = readFileSync(f, 'utf8');
+            if (t.includes('VehicleZoneDistribution')) { luaCount++; parseZones(t, mod.name); }
           }
         } catch {}
       }
@@ -108,12 +160,31 @@ for (const pack of readdirSync(WORKSHOP, { withFileTypes: true }).filter(e => e.
   }
 }
 
+// finalize
 const list = [...vehicles.values()].map(v => {
   const short = v.name.replace(/^Base\./, '');
   v.display = names.get(short) || names.get(v.name) || short;
-  // rough top speed guess isn't reliable across physics; keep raw stats only
+  const s = v.stats;
+  // derived fields
+  v.maxSpeed = s.maxSpeed; v.engineForce = s.engineForce; v.engineQuality = s.engineQuality;
+  v.mass = s.mass; v.offRoad = s.offRoadEfficiency;
+  v.seatsDeclared = s.seats;
+  v.fuel = (v.parts.find(p => p.cat === 'fuel') || {}).cap || null;
+  v.trunk = v.storageParts.filter(p => /truckbed|trunk/i.test(p.name)).reduce((a, b) => a + b.cap, 0) || null;
+  v.glovebox = v.storageParts.filter(p => /glovebox/i.test(p.name)).reduce((a, b) => a + b.cap, 0) || null;
+  v.seatStorage = v.storageParts.filter(p => /seat/i.test(p.name)).reduce((a, b) => a + b.cap, 0) || null;
+  v.storage = v.storageParts.reduce((a, b) => a + b.cap, 0) || null;
+  v.armed = v.parts.some(p => p.cat === 'weapon');
+  v.armored = v.parts.some(p => p.cat === 'armor') || (s.playerDamageProtection != null);
+  // spawn zones
+  const z = zones[short] || zones[v.name];
+  v.zones = z ? Object.entries(z).map(([zone, o]) => ({ zone, chance: o.chance })).sort((a, b) => b.chance - a.chance) : [];
   return v;
 });
-console.log(`files: ${fileCount}, vehicles: ${list.length}, translated names: ${names.size}`);
+
+const withZones = list.filter(v => v.zones.length).length;
+const armed = list.filter(v => v.armed).length;
+console.log(`vehicle files: ${fileCount}, zone lua: ${luaCount}`);
+console.log(`vehicles: ${list.length} · with spawn zones: ${withZones} · armed: ${armed} · translated names: ${names.size}`);
 writeFileSync(OUT, 'const GUIDE_VEH = ' + JSON.stringify({ vehicles: list }) + ';\n');
 console.log('Wrote ' + OUT);

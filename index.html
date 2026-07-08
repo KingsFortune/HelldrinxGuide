@@ -156,6 +156,65 @@ tr[data-room]:hover, tr[data-pool]:hover, tr[data-veh]:hover { background: var(-
   @keyframes dossierIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
 td.wrap { max-width: 340px; white-space: normal; word-break: break-word; line-height: 1.55; }
 td.rewards { max-width: 260px; line-height: 1.55; }
+/* ---- build planner (PZ-style) ---- */
+.bp-shell { --pz-bg: #1a1714; --pz-panel: #242018; --pz-panel2: #2e2820; --pz-border: #4a4030; --pz-gold: #c8a84b; --pz-green: #5a9a5e; --pz-red: #a85a4a; --pz-text: #d4c8b0; --pz-dim: #8a7d68; }
+.bp-top { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; background: var(--pz-panel); border: 1px solid var(--pz-border); border-radius: 4px; padding: 12px 18px; margin-bottom: 14px; }
+.bp-top h3 { margin: 0; color: var(--pz-gold); font-size: 15px; letter-spacing: 2px; text-transform: uppercase; font-weight: 700; }
+.bp-pts { display: flex; align-items: baseline; gap: 10px; }
+.bp-pts .num { font-size: 36px; font-weight: 800; line-height: 1; color: var(--pz-gold); }
+.bp-pts .num.ok { color: #7ec87a; } .bp-pts .num.bad { color: #e08070; }
+.bp-pts .lbl { color: var(--pz-dim); font-size: 11px; text-transform: uppercase; letter-spacing: 1px; }
+.bp-valid { font-size: 12px; padding: 4px 10px; border-radius: 3px; font-weight: 600; }
+.bp-valid.ok { background: #1e3320; color: #7ec87a; border: 1px solid #3a5a3e; }
+.bp-valid.bad { background: #331e1e; color: #e08070; border: 1px solid #5a3a3a; }
+.bp-wrap { display: grid; grid-template-columns: 1fr 300px; gap: 14px; align-items: start; }
+@media (max-width: 960px) { .bp-wrap { grid-template-columns: 1fr; } }
+.bp-side { position: sticky; top: 12px; display: flex; flex-direction: column; gap: 10px; }
+.bp-card { background: var(--pz-panel); border: 1px solid var(--pz-border); border-radius: 4px; padding: 12px; }
+.bp-card h4 { margin: 0 0 8px; color: var(--pz-gold); font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px; font-weight: 700; }
+.bp-occ-row { display: flex; gap: 8px; overflow-x: auto; padding: 4px 2px 10px; scrollbar-width: thin; }
+.bp-occ { flex: 0 0 76px; text-align: center; cursor: pointer; border: 2px solid var(--pz-border); border-radius: 4px; background: var(--pz-panel2); padding: 6px 4px 5px; transition: border-color .12s, background .12s; }
+.bp-occ:hover { border-color: var(--pz-gold); }
+.bp-occ.on { border-color: var(--pz-gold); background: #3a3020; box-shadow: 0 0 0 1px var(--pz-gold); }
+.bp-occ img { width: 52px; height: 52px; object-fit: contain; display: block; margin: 0 auto 4px; image-rendering: auto; }
+.bp-occ .oname { font-size: 10px; color: var(--pz-text); line-height: 1.2; max-height: 2.4em; overflow: hidden; }
+.bp-occ .ocost { font-size: 10px; color: var(--pz-dim); font-weight: 700; }
+.bp-occ-ph { width: 52px; height: 52px; margin: 0 auto 4px; background: #1a1510; border: 1px dashed var(--pz-border); border-radius: 3px; display: flex; align-items: center; justify-content: center; font-size: 22px; color: var(--pz-dim); }
+.bp-search { width: 100%; background: var(--pz-panel2); color: var(--pz-text); border: 1px solid var(--pz-border); border-radius: 3px; padding: 8px 10px; font-size: 13px; margin-bottom: 10px; }
+.bp-search:focus { outline: none; border-color: var(--pz-gold); }
+.bp-group h4 { display: flex; justify-content: space-between; align-items: baseline; margin: 14px 0 8px; color: var(--pz-gold); font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px; }
+.bp-group h4 .count { color: var(--pz-dim); font-size: 11px; text-transform: none; letter-spacing: 0; }
+.pz-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)); gap: 6px; }
+.pz-trait { position: relative; background: var(--pz-panel2); border: 2px solid var(--pz-border); border-radius: 4px; padding: 5px 4px 4px; cursor: pointer; text-align: center; transition: border-color .1s, transform .1s, background .1s; min-height: 88px; display: flex; flex-direction: column; align-items: center; }
+.pz-trait:hover:not(.disabled) { border-color: var(--pz-gold); transform: translateY(-1px); }
+.pz-trait.on { background: #1e2e1e; border-color: var(--pz-green); }
+.pz-trait.on.neg { background: #2e1e1e; border-color: var(--pz-red); }
+.pz-trait.disabled { opacity: .3; cursor: not-allowed; filter: grayscale(0.7); }
+.pz-tico { width: 42px; height: 42px; display: flex; align-items: center; justify-content: center; margin-bottom: 3px; }
+.pz-tico img { max-width: 42px; max-height: 42px; object-fit: contain; }
+.pz-tico-ph { width: 38px; height: 38px; background: #1a1510; border: 1px solid var(--pz-border); border-radius: 3px; font-size: 16px; color: var(--pz-dim); display: flex; align-items: center; justify-content: center; }
+.pz-tname { font-size: 10px; color: var(--pz-text); line-height: 1.2; flex: 1; display: flex; align-items: center; word-break: break-word; }
+.pz-tcost { font-size: 11px; font-weight: 800; margin-top: 2px; }
+.pz-tcost.pos { color: #7ec87a; } .pz-tcost.neg { color: #e08070; }
+.pz-trait .star { position: absolute; top: 2px; left: 3px; font-size: 9px; color: var(--pz-gold); }
+.pz-trait.on::after { content: '✓'; position: absolute; top: 2px; right: 4px; font-size: 10px; color: var(--pz-green); font-weight: 800; }
+.pz-trait.on.neg::after { color: var(--pz-red); }
+.bp-skill { display: flex; align-items: center; gap: 6px; margin: 3px 0; font-size: 12px; }
+.bp-skill .sn { flex: 1; color: var(--pz-text); }
+.bp-skill .sv { color: var(--pz-gold); font-weight: 700; min-width: 20px; text-align: right; }
+.bp-bar { height: 5px; background: #1a1510; border-radius: 2px; overflow: hidden; width: 70px; border: 1px solid var(--pz-border); }
+.bp-bar > i { display: block; height: 100%; background: linear-gradient(90deg, #8a7030, var(--pz-gold)); }
+.bp-selchip { display: inline-flex; align-items: center; gap: 5px; background: var(--pz-panel2); border: 1px solid var(--pz-border); border-radius: 3px; padding: 3px 8px; margin: 2px; font-size: 11px; color: var(--pz-text); }
+.bp-selchip img { width: 18px; height: 18px; object-fit: contain; }
+.bp-selchip .x { cursor: pointer; color: var(--pz-dim); font-weight: 700; margin-left: 2px; }
+.bp-selchip .x:hover { color: #e08070; }
+.bp-tip { position: fixed; z-index: 90; max-width: 280px; background: #12100e; border: 1px solid var(--pz-gold); border-radius: 4px; padding: 10px 12px; font-size: 12px; line-height: 1.5; pointer-events: none; opacity: 0; transition: opacity .12s; box-shadow: 0 6px 24px rgba(0,0,0,.7); color: var(--pz-text); }
+.bp-tip.show { opacity: 1; }
+.bp-tip .tt { color: var(--pz-gold); font-weight: 700; margin-bottom: 4px; }
+.bp-tip .tbo { color: #8ab4d4; margin-top: 4px; font-size: 11px; }
+.bp-tip .tconf { color: #e08070; margin-top: 5px; font-size: 11px; }
+.bp-intro { background: var(--pz-panel); border: 1px solid var(--pz-border); border-radius: 4px; padding: 10px 14px; margin-bottom: 12px; font-size: 13px; color: var(--pz-dim); }
+.bp-intro b { color: var(--pz-text); }
 </style>
 </head>
 <body>
@@ -172,6 +231,8 @@ td.rewards { max-width: 260px; line-height: 1.55; }
 <script src="details.js"></script>
 <script src="economy.js"></script>
 <script src="vehicles.js"></script>
+<script src="veh_zones.js"></script>
+<script src="traits.js"></script>
 <script src="rooms.js"></script>
 <script src="qol.js"></script>
 <script src="pool_locs.js"></script>
@@ -758,6 +819,53 @@ function openPoolPanel(key) {
   showPanel(h);
 }
 
+const VZONE_LABELS = {
+  military: 'Military bases & checkpoints', police: 'Police stations', fire: 'Fire stations',
+  medical: 'Hospitals & clinics', farm: 'Farms & barns', ranger: 'Ranger stations & forest',
+  fossoil: 'Gas stations', mccoy: 'McCoy Logging sites', trailerpark: 'Trailer parks',
+  parkingstall: 'Parking lots (general)', junkyard: 'Junkyards', construction: 'Construction sites',
+  trafficjamw: 'Highway traffic jam — west', trafficjame: 'Highway traffic jam — east',
+  trafficjamn: 'Highway traffic jam — north', trafficjams: 'Highway traffic jam — south',
+  normal: 'Roadside / residential', medium: 'Residential (medium)', good: 'Residential (affluent)',
+  bad: 'Rough neighborhoods', rich: 'Wealthy areas', poor: 'Poor areas', sport: 'Sports-car spots',
+  station: 'Train / bus stations', restaurant: 'Restaurants', mall: 'Shopping malls',
+  industrial: 'Industrial zones', warehouse: 'Warehouses', newdealer: 'New-car dealerships',
+  useddealer: 'Used-car dealerships', sportdealer: 'Sports-car dealerships',
+};
+const vzoneLabel = z => VZONE_LABELS[z] || z.replace(/([A-Z])/g, ' $1').replace(/^./, c => c.toUpperCase());
+window.vzoneLabel = vzoneLabel;
+if (typeof GUIDE_VEHZONES !== 'undefined') window.GUIDE_VEHZONES = GUIDE_VEHZONES;
+window.hasVehZone = key => typeof GUIDE_VEHZONES !== 'undefined' && GUIDE_VEHZONES[key] && GUIDE_VEHZONES[key].spots.length > 0;
+
+function openVehZonePanel(key) {
+  const z = (typeof GUIDE_VEHZONES !== 'undefined') && GUIDE_VEHZONES[key];
+  const label = vzoneLabel(key);
+  let h = `<button class="dclose" onclick="closeDossier()">✕ close</button>
+    <h2>📍 ${esc(label)}</h2>`;
+  if (!z || !z.spots.length) {
+    h += `<div class="dmeta">zone code <code>${esc(key)}</code></div>
+      <div class="note"><h3>No example coordinates</h3>This zone type isn't placed on the vanilla Knox map or any of the server's map mods — it's created dynamically by a vehicle/dealership mod's own code, so there are no fixed coordinates. Look for ${esc(label).toLowerCase()} in-game.</div>`;
+    showPanel(h); return;
+  }
+  // group spots by map — vanilla Knox first
+  const byMap = {};
+  for (const s of z.spots) (byMap[s.map] = byMap[s.map] || []).push(s);
+  const maps = Object.keys(byMap).sort((a, b) => (b === 'Knox Country (vanilla)' ? 1 : 0) - (a === 'Knox Country (vanilla)' ? 1 : 0) || a.localeCompare(b));
+  const vanillaN = (z.spots.filter(s => s.vanilla)).length;
+  h += `<div class="dmeta">zone code <code>${esc(key)}</code> · ~${z.n} such zones total · ${z.spots.length} example spots across ${maps.length} maps${vanillaN ? ` (incl. ${vanillaN} on the vanilla Knox map)` : ''}</div>
+    <div class="note hot"><h3>How to use these</h3><div class="prose">Each coordinate is a real parking/spawn zone where this vehicle can appear. Copy a coord and paste it into the in-game map or a teleport command. Bigger zones (larger tile area) are more likely to hold a vehicle. <b>Knox Country (vanilla)</b> = the base Muldraugh/West Point/Louisville map; the rest are the server's custom map mods.</div></div>`;
+  for (const map of maps) {
+    h += `<div class="dsec">${esc(map)} — ${byMap[map].length} spot${byMap[map].length > 1 ? 's' : ''}</div>`;
+    for (const s of byMap[map]) {
+      h += `<div class="loc"><span class="pin">📍</span><div style="flex:1">
+        <b style="color:#7ee2a0">${s.x}, ${s.y}</b> · ${floorName(s.z)} · ${s.w}×${s.h} tiles</div>
+        <span class="viewall" data-copy="${s.x},${s.y},${s.z}">⧉ copy</span></div>`;
+    }
+  }
+  showPanel(h);
+}
+window.openVehZonePanel = openVehZonePanel;
+
 function copyToast(text) {
   navigator.clipboard?.writeText(text);
   const t = document.getElementById('toast');
@@ -772,7 +880,161 @@ window.GUIDE_FN = { opFor, mergeSpawns, spawnLocHTML, whereCards, tagHTML, esc }
 window.GUIDE_DETAILS = GUIDE_DETAILS;
 
 // ---------- tabs ----------
+// ---------- Build Planner ----------
+const BP = { occId: 'unemployed', sel: new Set() };
+function bpBoostStr(boosts) { return (boosts || []).map(b => `${b.skill} ${b.n > 0 ? '+' : ''}${b.n}`).join(', '); }
+function bpIco(el, src, ph) {
+  if (src) { const img = document.createElement('img'); img.src = src; img.alt = ''; img.loading = 'lazy'; el.append(img); }
+  else { const d = document.createElement('div'); d.className = ph; d.textContent = '?'; el.append(d); }
+}
+let bpTip;
+function bpShowTip(t, x, y) {
+  if (!bpTip) { bpTip = document.createElement('div'); bpTip.className = 'bp-tip'; document.body.appendChild(bpTip); }
+  const conf = (t.conflicts || []).map(id => (GUIDE_TRAITS.traits.find(z => z.id === id) || {}).name || id).filter(Boolean);
+  bpTip.innerHTML = `<div class="tt">${t.special ? '★ ' : ''}${esc(t.name)} <span style="color:${t.cost > 0 ? '#7ec87a' : '#e08070'}">(${t.cost > 0 ? '+' : ''}${t.cost})</span></div>
+    ${t.desc ? `<div>${esc(t.desc)}</div>` : '<div style="color:var(--pz-dim)">No description.</div>'}
+    ${t.boosts ? `<div class="tbo">${esc(bpBoostStr(t.boosts))}</div>` : ''}
+    ${t.recipes ? `<div class="tbo">Recipes: ${esc(t.recipes.slice(0, 8).join(', '))}${t.recipes.length > 8 ? '…' : ''}</div>` : ''}
+    ${conf.length ? `<div class="tconf">Conflicts: ${esc(conf.join(', '))}</div>` : ''}`;
+  bpTip.classList.add('show');
+  const px = Math.min(x + 14, window.innerWidth - 290), py = Math.min(y + 14, window.innerHeight - (bpTip.offsetHeight || 120) - 10);
+  bpTip.style.left = px + 'px'; bpTip.style.top = py + 'px';
+}
+function bpHideTip() { if (bpTip) bpTip.classList.remove('show'); }
+
+function bpTab() {
+  if (typeof GUIDE_TRAITS === 'undefined') { const d = document.createElement('div'); d.className = 'note'; d.textContent = 'Trait data not loaded — run node tools/parse_traits.mjs'; return d; }
+  const TR = GUIDE_TRAITS.traits, PR = GUIDE_TRAITS.professions;
+  const byId = new Map(TR.map(t => [t.id, t]));
+  const wrap = document.createElement('div');
+  wrap.className = 'bp-shell';
+
+  const intro = document.createElement('div'); intro.className = 'bp-intro';
+  intro.innerHTML = `Plan a <b>HellDrinx</b> character — pick occupation, then traits. Positive traits <b>cost</b> points; negative traits <b>refund</b> points. <b>Points must stay ≥ 0.</b> Hover for details. ★ = server-unique mod content. <span class="count">${TR.length} traits · ${PR.length} occupations</span>`;
+  wrap.append(intro);
+
+  const top = document.createElement('div'); top.className = 'bp-top';
+  top.innerHTML = `<h3>Character Build</h3><div class="bp-pts"><div><div class="num ok" id="bpNum">0</div><div class="lbl">Points</div></div><div class="bp-valid ok" id="bpValid">✓ Valid</div></div>`;
+  wrap.append(top);
+
+  const occCard = document.createElement('div'); occCard.className = 'bp-card';
+  occCard.innerHTML = '<h4>Occupation</h4>';
+  const occRow = document.createElement('div'); occRow.className = 'bp-occ-row';
+  occCard.append(occRow);
+  wrap.append(occCard);
+
+  const grid = document.createElement('div'); grid.className = 'bp-wrap';
+  const left = document.createElement('div');
+  const side = document.createElement('div'); side.className = 'bp-side';
+  grid.append(left, side);
+  wrap.append(grid);
+
+  side.innerHTML = `
+    <div class="bp-card"><h4>Occupation Info</h4><div id="bpOccInfo"><span class="count">Select an occupation above.</span></div></div>
+    <div class="bp-card"><h4>Starting Skills</h4><div id="bpSkills"><span class="count">—</span></div></div>
+    <div class="bp-card"><h4>Selected Traits</h4><div id="bpSel"><span class="count">None</span></div></div>`;
+
+  const search = document.createElement('input'); search.className = 'bp-search'; search.type = 'search'; search.placeholder = 'Search traits…';
+  left.append(search);
+  const posWrap = document.createElement('div'); posWrap.className = 'bp-group';
+  const negWrap = document.createElement('div'); negWrap.className = 'bp-group';
+  left.append(posWrap, negWrap);
+
+  const occEls = new Map();
+  const sortedProfs = [...PR].sort((a, b) => (a.id === 'unemployed' ? -1 : b.id === 'unemployed' ? 1 : a.name.localeCompare(b.name)));
+  for (const p of sortedProfs) {
+    const el = document.createElement('div');
+    el.className = 'bp-occ' + (BP.occId === p.id ? ' on' : '');
+    el.dataset.id = p.id;
+    el.title = `${p.name} (${p.cost > 0 ? '+' : ''}${p.cost} pts)`;
+    const ico = document.createElement('div');
+    if (p.icon) { const img = document.createElement('img'); img.src = p.icon; img.alt = p.name; img.loading = 'lazy'; ico.append(img); }
+    else { const ph = document.createElement('div'); ph.className = 'bp-occ-ph'; ph.textContent = p.name.charAt(0); ico.append(ph); }
+    el.append(ico);
+    const nm = document.createElement('div'); nm.className = 'oname'; nm.textContent = p.name; el.append(nm);
+    const co = document.createElement('div'); co.className = 'ocost'; co.textContent = (p.cost > 0 ? '+' : '') + p.cost; el.append(co);
+    el.addEventListener('click', () => { BP.occId = p.id; update(); });
+    occRow.append(el);
+    occEls.set(p.id, el);
+  }
+
+  const makeTrait = t => {
+    const el = document.createElement('div');
+    el.className = 'pz-trait' + (t.cost < 0 ? ' neg' : '');
+    el.dataset.id = t.id;
+    if (t.special) { const s = document.createElement('span'); s.className = 'star'; s.textContent = '★'; el.append(s); }
+    const ico = document.createElement('div'); ico.className = 'pz-tico';
+    if (t.icon) { const img = document.createElement('img'); img.src = t.icon; img.alt = ''; img.loading = 'lazy'; ico.append(img); }
+    else { const ph = document.createElement('div'); ph.className = 'pz-tico-ph'; ph.textContent = t.name.charAt(0); ico.append(ph); }
+    el.append(ico);
+    const nm = document.createElement('div'); nm.className = 'pz-tname'; nm.textContent = t.name; el.append(nm);
+    const co = document.createElement('div'); co.className = 'pz-tcost ' + (t.cost > 0 ? 'pos' : 'neg'); co.textContent = (t.cost > 0 ? '+' : '') + t.cost; el.append(co);
+    el.addEventListener('mouseenter', e => bpShowTip(t, e.clientX, e.clientY));
+    el.addEventListener('mousemove', e => bpShowTip(t, e.clientX, e.clientY));
+    el.addEventListener('mouseleave', bpHideTip);
+    el.addEventListener('click', () => { if (el.classList.contains('disabled')) return; BP.sel.has(t.id) ? BP.sel.delete(t.id) : BP.sel.add(t.id); update(); });
+    return el;
+  };
+
+  const pos = TR.filter(t => t.cost > 0), neg = TR.filter(t => t.cost < 0);
+  posWrap.innerHTML = `<h4><span>Positive</span><span class="count">${pos.length}</span></h4>`;
+  const posGrid = document.createElement('div'); posGrid.className = 'pz-grid'; posWrap.append(posGrid);
+  negWrap.innerHTML = `<h4><span>Negative</span><span class="count">${neg.length}</span></h4>`;
+  const negGrid = document.createElement('div'); negGrid.className = 'pz-grid'; negWrap.append(negGrid);
+  const cards = new Map();
+  for (const t of pos) { const c = makeTrait(t); posGrid.append(c); cards.set(t.id, c); }
+  for (const t of neg) { const c = makeTrait(t); negGrid.append(c); cards.set(t.id, c); }
+
+  search.addEventListener('input', () => {
+    const q = search.value.toLowerCase();
+    for (const [id, c] of cards) {
+      const t = byId.get(id);
+      c.style.display = (!q || t.name.toLowerCase().includes(q) || (t.boosts && bpBoostStr(t.boosts).toLowerCase().includes(q))) ? '' : 'none';
+    }
+  });
+
+  function update() {
+    const occ = PR.find(p => p.id === BP.occId) || PR.find(p => p.id === 'unemployed');
+    for (const [id, el] of occEls) el.classList.toggle('on', id === BP.occId);
+    const blocked = new Set();
+    for (const id of BP.sel) for (const c of (byId.get(id)?.conflicts || [])) blocked.add(c);
+    let pts = occ ? occ.cost : 8;
+    for (const id of BP.sel) pts -= (byId.get(id)?.cost || 0);
+    const numEl = top.querySelector('#bpNum'), validEl = top.querySelector('#bpValid');
+    numEl.textContent = pts;
+    numEl.className = 'num ' + (pts >= 0 ? 'ok' : 'bad');
+    validEl.className = 'bp-valid ' + (pts >= 0 ? 'ok' : 'bad');
+    validEl.textContent = pts >= 0 ? '✓ Valid build' : `✗ Over by ${-pts}`;
+    for (const [id, c] of cards) {
+      c.classList.toggle('on', BP.sel.has(id));
+      c.classList.toggle('disabled', !BP.sel.has(id) && blocked.has(id));
+    }
+    const occInfo = side.querySelector('#bpOccInfo');
+    if (occ) {
+      let h = `<div style="font-weight:600;color:#d4c8b0;margin-bottom:4px">${esc(occ.name)} <span style="color:var(--pz-gold)">(${occ.cost > 0 ? '+' : ''}${occ.cost})</span></div>`;
+      if (occ.desc) h += `<div style="font-size:12px;color:var(--pz-dim);margin-bottom:6px">${esc(occ.desc)}</div>`;
+      if (occ.freeTraitNames) h += `<div style="font-size:11px"><span style="color:#7ec87a">Free:</span> ${esc(occ.freeTraitNames.join(', '))}</div>`;
+      if (occ.recipes) h += `<div style="font-size:11px;color:var(--pz-dim);margin-top:4px">${esc(occ.recipes.slice(0, 5).join(', '))}${occ.recipes.length > 5 ? '…' : ''}</div>`;
+      occInfo.innerHTML = h;
+    }
+    const skills = {};
+    if (occ?.effective) for (const b of occ.effective) skills[b.skill] = (skills[b.skill] || 0) + b.n;
+    for (const id of BP.sel) for (const b of (byId.get(id)?.boosts || [])) skills[b.skill] = (skills[b.skill] || 0) + b.n;
+    const skEl = side.querySelector('#bpSkills');
+    const rows = Object.entries(skills).filter(([, n]) => n !== 0).sort((a, b) => b[1] - a[1]);
+    skEl.innerHTML = rows.length ? rows.map(([s, n]) => `<div class="bp-skill"><span class="sn">${esc(s)}</span><span class="bp-bar"><i style="width:${Math.min(100, Math.abs(n) / 6 * 100)}%;${n < 0 ? 'background:#a85a4a' : ''}"></i></span><span class="sv" style="${n < 0 ? 'color:#e08070' : ''}">${n > 0 ? '+' : ''}${n}</span></div>`).join('') : '<span class="count">—</span>';
+    const selEl = side.querySelector('#bpSel');
+    if (!BP.sel.size) selEl.innerHTML = '<span class="count">None</span>';
+    else selEl.innerHTML = [...BP.sel].map(id => byId.get(id)).filter(Boolean).sort((a, b) => b.cost - a.cost)
+      .map(t => `<span class="bp-selchip">${t.icon ? `<img src="${esc(t.icon)}" alt="">` : ''}${t.special ? '★' : ''}${esc(t.name)} <span style="color:${t.cost > 0 ? '#7ec87a' : '#e08070'}">${t.cost > 0 ? '+' : ''}${t.cost}</span><span class="x" data-bpremove="${esc(t.id)}">✕</span></span>`).join('');
+  }
+  wrap.addEventListener('click', e => { const rm = e.target.closest('[data-bpremove]'); if (rm) { BP.sel.delete(rm.dataset.bpremove); update(); } });
+  update();
+  return wrap;
+}
+
 const charSubs = {
+  'Build Planner': () => bpTab(),
   Melee: () => {
     const rows = DEDUP.filter(i => i._kind === 'Melee');
     const w = document.createElement('div');
@@ -994,21 +1256,33 @@ const lootSubs = {
 function vehTab() {
   const d = document.createElement('div');
   d.append(secHead('Special vehicles'), notes(VEH_INTEL));
-  const rows = GUIDE_VEH.vehicles.filter(v => !/burnt|wreck|smashed|junkyard|destroyed/i.test(v.name + ' ' + (v.display || '')));
-  d.append(secHead('All vehicles'), tableSection(tableView(rows.map(v => ({
+  const all = GUIDE_VEH.vehicles.filter(v => !/burnt|wreck|smashed|junkyard|destroyed/i.test(v.name + ' ' + (v.display || '')));
+  // spotlight strip: armed / special vehicles
+  const special = all.filter(v => v.armed || /bulldozer|elgin|sweeper/i.test(v.name));
+  if (special.length) {
+    const strip = document.createElement('div');
+    strip.innerHTML = `<div class="opstrip">` + special.map(v =>
+      `<a data-veh="${esc(v.name)}">${v.armed ? '🔫 ' : (/dozer/i.test(v.name) ? '🚜 ' : '🧹 ')}${esc(v.display || v.name)}</a>`).join('') + `</div>`;
+    d.append(strip);
+  }
+  const rows = all.map(v => ({
     _id: v.name, DisplayName: v.display || v.name, _src: v.mod,
-    maxSpeed: v.maxSpeed, seats: v.seatsDeclared || v.seats, trunk: v.trunk, storage: v.storage,
-    offRoad: v.offRoad, mass: v.mass,
-  })), [
-    { k: 'DisplayName', h: 'Vehicle', cls: 'name', f: r => `<span data-veh="${esc(r._id)}" style="cursor:pointer;color:var(--blue);border-bottom:1px dotted var(--blue)">${esc(r.DisplayName)}</span>` },
-    { k: 'maxSpeed', h: 'Top speed', num: 1 },
+    maxSpeed: v.maxSpeed, seats: v.seatsDeclared || v.seats, fuel: v.fuel, trunk: v.trunk, storage: v.storage,
+    offRoad: v.offRoad, zones: v.zones ? v.zones.length : 0,
+    flags: (v.armed ? '🔫' : '') + (v.armored ? '🛡️' : ''),
+  }));
+  d.append(secHead('All vehicles — click any name for the full spec sheet'), tableSection(tableView(rows, [
+    { k: 'DisplayName', h: 'Vehicle', cls: 'name', f: r => `<span data-veh="${esc(r._id)}" style="cursor:pointer;color:var(--blue);border-bottom:1px dotted var(--blue)">${esc(r.DisplayName)}</span>${r.flags ? ' ' + r.flags : ''}` },
+    { k: 'maxSpeed', h: 'Speed', num: 1 },
     { k: 'seats', h: 'Seats', num: 1 },
-    { k: 'trunk', h: 'Trunk', num: 1 },
-    { k: 'storage', h: 'Total storage', num: 1 },
+    { k: 'fuel', h: 'Fuel', num: 1 },
+    { k: 'trunk', h: 'Truck bed', num: 1 },
+    { k: 'storage', h: 'Storage', num: 1 },
     { k: 'offRoad', h: 'Off-road', num: 1 },
+    { k: 'zones', h: 'Spawn zones', num: 1 },
     { k: '_src', h: 'Mod', cls: 'mod' },
   ]), 'maxSpeed'));
-  d.insertAdjacentHTML('beforeend', '<p class="count">Click a vehicle name for full wiki page with stats.</p>');
+  d.insertAdjacentHTML('beforeend', '<p class="count">🔫 armed · 🛡️ armored. Click a vehicle for its full spec sheet: performance, fuel/storage, spawn zones, and every part.</p>');
   return d;
 }
 
@@ -1110,6 +1384,8 @@ document.addEventListener('click', e => {
   if (rm) { openRoomPanel(rm.dataset.room); return; }
   const pl = e.target.closest('[data-pool]');
   if (pl) { openPoolPanel(pl.dataset.pool); return; }
+  const vz = e.target.closest('[data-vzone]');
+  if (vz) { openVehZonePanel(vz.dataset.vzone); return; }
   const veh = e.target.closest('[data-veh]');
   if (veh) { WIKI.open(veh.dataset.veh, { kind: 'vehicle' }); return; }
   const a = e.target.closest('a.ilink');

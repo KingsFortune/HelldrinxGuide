@@ -11,4 +11,4 @@ createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': types[extname(p)] || 'application/octet-stream' });
     res.end(body);
   } catch { res.writeHead(404); res.end('nope'); }
-}).listen(8642, () => console.log('guide on http://localhost:8642'));
+}).listen(process.env.PORT || 8642, () => console.log('guide on http://localhost:' + (process.env.PORT || 8642)));

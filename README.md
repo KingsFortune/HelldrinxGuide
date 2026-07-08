@@ -32,11 +32,14 @@ node tools/parse_rooms.mjs
 
 ```bash
 node tools/build_wiki.mjs
+node tools/parse_traits.mjs   # build planner + trait/occupation icons
 ```
 
 This writes:
 - `assets/icons/` — item PNGs copied from game/mod files
+- `assets/traits/` + `assets/professions/` — build planner icons
 - `icons.js` — id → icon path manifest
+- `traits.js` — occupations + traits (Character → Build Planner tab)
 - `i/{item-slug}/index.html` — Open Graph stubs for Discord embeds
 - `v/{vehicle-slug}/index.html` — vehicle share stubs
 

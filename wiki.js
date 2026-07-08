@@ -69,10 +69,10 @@
   }
 
   function infoboxHTML(entity) {
-    const { title, id, kind, mod, icon, stats, tags } = entity;
+    const { title, id, kind, mod, icon, stats, tags, emoji } = entity;
     const img = icon
       ? `<img class="wikiicon" src="${icon}" alt="" loading="lazy">`
-      : `<div class="wikiicon-ph">${kindEmoji(kind)}</div>`;
+      : `<div class="wikiicon-ph">${emoji || kindEmoji(kind)}</div>`;
     let rows = stats.map(([k, v]) => `<tr><th>${esc(k)}</th><td>${esc(String(v))}</td></tr>`).join('');
     if (tags?.length) rows += `<tr><th>Tags</th><td>${tags}</td></tr>`;
     return `<aside class="wikiinfobox">
@@ -152,19 +152,124 @@
     return h;
   }
 
+  const ZONE_LABELS = {
+    military: 'Military bases & checkpoints', police: 'Police stations', fire: 'Fire stations',
+    medical: 'Hospitals & clinics', farm: 'Farms & barns', ranger: 'Ranger stations & forest',
+    fossoil: 'Gas stations', mccoy: 'McCoy Logging sites', trailerpark: 'Trailer parks',
+    parkingstall: 'Parking lots', junkyard: 'Junkyards', construction: 'Construction sites',
+    trafficjamw: 'Highway traffic jam — west', trafficjame: 'Highway traffic jam — east',
+    trafficjamn: 'Highway traffic jam — north', trafficjams: 'Highway traffic jam — south',
+    trafficjam: 'Highway traffic jams', normal: 'Roadside / residential', medium: 'Residential (medium)',
+    good: 'Residential (affluent)', bad: 'Rough neighborhoods', rich: 'Wealthy areas', poor: 'Poor areas',
+    station: 'Train / bus stations', restaurant: 'Restaurants', bank: 'Banks', mall: 'Shopping malls',
+    industrial: 'Industrial zones', warehouse: 'Warehouses',
+  };
+  const zoneLabel = z => ZONE_LABELS[z] || z.replace(/([A-Z])/g, ' $1').replace(/^./, c => c.toUpperCase());
+  function chanceBucket(c) {
+    if (c >= 20) return ['Very common', '#7ee2a0'];
+    if (c >= 8) return ['Common', '#a6d96a'];
+    if (c >= 3) return ['Uncommon', '#e8c568'];
+    return ['Rare', '#ff9c8a'];
+  }
+  const PART_GROUPS = [
+    ['weapon', '🔫 Weapons'], ['armor', '🛡️ Armor'], ['storage', '📦 Storage'], ['fuel', '⛽ Fuel'],
+    ['engine', '⚙️ Engine'], ['wheels', '🛞 Wheels & suspension'], ['door', '🚪 Doors'],
+    ['window', '🪟 Windows'], ['lights', '💡 Lights'], ['electronics', '📡 Electronics'], ['misc', '🔩 Other'],
+  ];
+  // curated special-ability notes for marquee vehicles
+  const VEH_NOTES = {
+    SuperBulldozer: `<b>Five drive modes</b> (radial menu while driving): <b>Standard</b> destroys objects/trees in your path and drops their loot · <b>Standard (no loot)</b> · <b>Foliage</b> clears only trees & vegetation · <b>Gravel</b> paves the ground under you into road · <b>EXTREME</b> deletes everything and flattens terrain to bare dirt. Clears a base plot in minutes.`,
+    '93fordElgin': `<b>Street sweeper.</b> While driving, the brushes scrub blood & grime off the road AND vacuum ground items straight into the truck's storage — drive through a horde-night killing field to hoover every dropped weapon and bag without leaving the seat.`,
+    M60A3: `<b>Drive & Shoot tank.</b> The 105mm main gun and M240 coaxial machine gun are functional. Carries an internal ammo store. Extremely slow (20) and needs Mechanics 8 to repair the engine.`,
+    M113_APC: `<b>Best group vehicle on the server:</b> 6-8 seats, 400-capacity truck bed, hull armor, and a functional Browning M2 turret. Slow but nearly indestructible (5000 front-end health).`,
+    M41_Walker_Bulldog: `Light tank with a functional turret. Tracked, slow, and armored — a mobile strongpoint.`,
+    BTR: `Russian 8-wheel APC. Armored troop carrier — pair with the BMP for a full Soviet motor pool.`,
+    BMP: `Russian tracked IFV. Armored, slow, and imposing.`,
+  };
+
+  function vehEmoji(v) {
+    const n = (v.name + ' ' + (v.display || '')).toLowerCase();
+    if (/dozer/.test(n)) return '🚜';
+    if (/sweeper|elgin/.test(n)) return '🧹';
+    if (/tank|m60|m41|abrams|bulldog/.test(n)) return '🪖';
+    if (/apc|m113|btr|bmp|humvee|m998|military|m35|m923/.test(n)) return '🛻';
+    if (/ambulance|medic/.test(n)) return '🚑';
+    if (/police|swat|interceptor|cvpi/.test(n)) return '🚓';
+    if (/fire|pumper/.test(n)) return '🚒';
+    if (/trailer|semi|cistern|container/.test(n)) return '🚛';
+    if (/truck|pickup|van|e150|hilux|ranger|bronco/.test(n)) return '🚚';
+    if (/bus/.test(n)) return '🚌';
+    if (/moto|bike|harley/.test(n)) return '🏍️';
+    if (/mclaren|gt40|charger|camaro|mustang|corvette|ferrari|lambo|porsche|race/.test(n)) return '🏎️';
+    return '🚗';
+  }
+
   function vehicleWikiBody(v) {
-    let h = `<div class="wiki-desc">${esc(v.display || v.name)} — ${esc(v.mod)}</div>`;
-    h += `<div class="statgrid">`;
-    const add = (k, val) => { if (val != null && val !== '') h += `<div><b>${esc(k)}</b>${esc(String(val))}</div>`; };
-    add('Top speed', v.maxSpeed);
-    add('Engine', v.engineForce);
-    add('Quality', v.engineQuality);
-    add('Seats', v.seats);
-    add('Trunk', v.trunk);
-    add('Storage', v.storage);
-    add('Off-road', v.offRoad);
-    add('Mass', v.mass);
-    h += '</div>';
+    const s = v.stats || {};
+    let h = '';
+    // class badges
+    const badges = [];
+    if (v.armed) badges.push(['🔫 Armed', '#ff9c8a']);
+    if (v.armored) badges.push(['🛡️ Armored', '#8fb8e8']);
+    if (v.maxSpeed >= 120) badges.push(['🏎️ Fast', '#e8c568']);
+    if ((v.storage || 0) >= 200) badges.push(['📦 Hauler', '#7ee2a0']);
+    if (v.offRoad >= 1.3) badges.push(['🏔️ Off-road', '#a6d96a']);
+    if (v.seatsDeclared >= 6) badges.push(['👥 ' + v.seatsDeclared + ' seats', '#c9a6e8']);
+    if (badges.length) h += `<div style="display:flex;gap:7px;flex-wrap:wrap;margin:4px 0 12px">` +
+      badges.map(([t, c]) => `<span class="chip" style="background:${c}22;color:${c};font-size:12.5px;padding:3px 10px">${esc(t)}</span>`).join('') + `</div>`;
+
+    if (VEH_NOTES[v.name] || VEH_NOTES[v.name.replace(/^Base\./, '')])
+      h += `<div class="note hot"><h3>Special abilities</h3><div class="prose">${VEH_NOTES[v.name] || VEH_NOTES[v.name.replace(/^Base\./, '')]}</div></div>`;
+
+    // spawn zones — the headline detail
+    if (v.zones?.length) {
+      h += `<div class="dsec">📍 Where it spawns (${v.zones.length} zones) — click a zone for example map coordinates</div>`;
+      for (const z of v.zones) {
+        const [bl, bc] = chanceBucket(z.chance);
+        const clickable = window.hasVehZone?.(z.zone);
+        const nSpots = clickable ? window.GUIDE_VEHZONES[z.zone].spots.length : 0;
+        h += `<div class="loc${clickable ? ' rowbtn' : ''}" ${clickable ? `data-vzone="${esc(z.zone)}"` : ''} style="border-left-color:${bc}${clickable ? ';cursor:pointer' : ''}"><span class="pin">${z.chance >= 20 ? '⭐' : '📍'}</span><div style="flex:1">
+          <b>${esc(zoneLabel(z.zone))}</b> <span class="chip" style="background:${bc}22;color:${bc}">${esc(bl)}</span>${clickable ? ` <span class="viewall">▸ ${nSpots} example location${nSpots > 1 ? 's' : ''}</span>` : ''}<br>
+          <span class="sub2">zone <code>${esc(z.zone)}</code> · spawn weight ${z.chance}${clickable ? '' : ' · no fixed coords (mod-created zone)'}</span></div></div>`;
+      }
+    } else {
+      h += `<div class="dsec">📍 Where it spawns</div><div class="count">Not in the standard vehicle spawn tables — this vehicle is placed by a custom script, quest, admin, or map (e.g. the Super Bulldozer uses its own spawner). Check the mod page or ask an admin.</div>`;
+    }
+
+    // performance
+    const perf = [
+      ['Top speed', v.maxSpeed], ['Engine force', s.engineForce], ['Engine power', s.enginePower],
+      ['Engine quality', s.engineQuality], ['Engine loudness', s.engineLoudness], ['Braking force', s.brakingForce],
+      ['Mass (kg)', s.mass], ['Off-road', v.offRoad], ['Wheel friction', s.wheelFriction],
+      ['Roll influence', s.rollInfluence], ['Steering', s.steeringIncrement],
+      ['Front health', s.frontEndHealth], ['Rear health', s.rearEndHealth],
+      ['Damage protection', s.playerDamageProtection], ['Repair skill', s.engineRepairLevel ? 'Mechanics ' + s.engineRepairLevel : null],
+      ['Wheels', v.wheelCount || null],
+    ].filter(([, val]) => val != null && val !== '');
+    if (perf.length) h += `<div class="dsec">⚙️ Performance</div><div class="statgrid">` +
+      perf.map(([k, val]) => `<div><b>${esc(k)}</b>${esc(String(val))}</div>`).join('') + `</div>`;
+
+    // capacity
+    const cap = [
+      ['⛽ Fuel tank', v.fuel], ['📦 Truck bed', v.trunk], ['🧰 Glovebox', v.glovebox],
+      ['💺 Seat storage', v.seatStorage], ['Σ Total storage', v.storage], ['👥 Seats', v.seatsDeclared],
+      ['🎨 Paint/camo skins', v.skins || null],
+    ].filter(([, val]) => val != null && val !== '');
+    if (cap.length) h += `<div class="dsec">🎒 Capacity & fuel</div><div class="statgrid">` +
+      cap.map(([k, val]) => `<div><b>${esc(k)}</b>${esc(String(val))}</div>`).join('') + `</div>`;
+
+    // parts, grouped
+    if (v.parts?.length) {
+      const byCat = {};
+      for (const p of v.parts) (byCat[p.cat] = byCat[p.cat] || []).push(p);
+      h += `<div class="dsec">🔧 Parts & components (${v.parts.length})</div>`;
+      for (const [cat, label] of PART_GROUPS) {
+        const ps = byCat[cat];
+        if (!ps?.length) continue;
+        h += `<div style="margin:8px 0 3px;color:var(--dim);font-size:12px;font-weight:600">${esc(label)}</div><div class="itemgrid">` +
+          ps.map(p => `<div class="cell"><div style="flex:1">${esc(p.name.replace(/\*/g, ''))}${p.cap ? ` <span class="count">cap ${p.cap}</span>` : ''}</div></div>`).join('') + `</div>`;
+      }
+    }
     return h;
   }
 
@@ -225,13 +330,19 @@
       const stats = [];
       const add = (k, val) => { if (val != null && val !== '') stats.push([k, val]); };
       add('Top speed', v.maxSpeed);
-      add('Seats', v.seats);
-      add('Trunk', v.trunk);
+      add('Seats', v.seatsDeclared || v.seats);
+      add('Fuel', v.fuel);
+      add('Truck bed', v.trunk);
+      add('Total storage', v.storage);
+      add('Off-road', v.offRoad);
+      add('Armed', v.armed ? 'Yes 🔫' : null);
+      add('Armored', v.armored ? 'Yes 🛡️' : null);
+      add('Spawn zones', v.zones?.length || null);
       add('Mod', v.mod);
       entity = {
-        id, kind, title: v.display || v.name,
+        id, kind, title: v.display || v.name, emoji: vehEmoji(v),
         bodyHTML: vehicleWikiBody(v),
-        infobox: { title: v.display || v.name, id, kind: 'Vehicle', mod: v.mod, icon: null, stats, tags: null },
+        infobox: { title: v.display || v.name, id, kind: 'Vehicle', mod: v.mod, icon: null, emoji: vehEmoji(v), stats, tags: null },
       };
     } else {
       const it = window.BY_ID?.get(id);
