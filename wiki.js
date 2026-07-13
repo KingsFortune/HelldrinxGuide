@@ -108,15 +108,55 @@
     const id = it._id;
     const g = FN.opFor?.(id);
     let h = '';
+
+    if (typeof WIKI_LOOT !== 'undefined' && typeof SPAWN_RESOLVE !== 'undefined') {
+      const guide = SPAWN_RESOLVE.buildItemGuide(id);
+      h += WIKI_LOOT.renderDetailPanel(guide).replace(/<div class="lf-detail-head">[\s\S]*?<\/div>/, '');
+    } else if (typeof SPAWN_RESOLVE !== 'undefined') {
+      const sum = SPAWN_RESOLVE.summarizeLocations(id, 30);
+      if (sum.hasSpawn) {
+        h += `<div class="spawn-hero"><h3>Where to find it</h3>`;
+        if (sum.inferred && !sum.direct) {
+          h += `<div class="count" style="margin-bottom:8px">Traced via mod loot rules — spawns in the same containers as these vanilla pools:</div>`;
+        } else if (sum.inferred) {
+          h += `<div class="count" style="margin-bottom:8px">${sum.direct} direct loot pool${sum.direct !== 1 ? 's' : ''} · ${sum.inferred} traced via mod inserts</div>`;
+        } else {
+          h += `<div class="count" style="margin-bottom:8px">${sum.total} loot pool${sum.total !== 1 ? 's' : ''} — search these buildings and containers</div>`;
+        }
+        h += `<div class="lf-locs">` + sum.lines.map(l => {
+          const border = l.origin === 'direct' ? 'var(--green)' : 'var(--ws-gold-dim)';
+          const rule = l.rule ? `<div class="count" style="margin-top:4px;font-style:italic">${esc(l.rule)}</div>` : '';
+          return `<div class="loc" style="border-left-color:${border}">
+            <span class="pin">${l.origin === 'direct' ? '📦' : '↳'}</span>
+            <div style="flex:1">
+              <b>${esc(l.title)}</b>
+              <div class="sub2" style="margin-top:4px;line-height:1.5">${esc(l.detail)}</div>
+              ${l.meta ? `<div class="count" style="margin-top:3px">${esc(l.meta)}</div>` : ''}
+              ${rule}
+            </div></div>`;
+        }).join('');
+        if (sum.total > sum.lines.length) {
+          h += `<p class="count">+${sum.total - sum.lines.length} more pools — use Container Pools browse for full list</p>`;
+        }
+        h += `</div></div>`;
+      } else {
+        h += `<div class="spawn-hero"><h3>Where to find it</h3><div class="count">Not in parsed distribution files — crafted, shop, quest, or custom spawn.</div></div>`;
+      }
+    } else {
+      const sp = FN.mergeSpawns?.(id, window.GUIDE_DETAILS?.spawns) || [];
+      if (sp.length && FN.spawnLocHTML) {
+        h += `<div class="spawn-hero"><h3>Where to find it</h3>${FN.spawnLocHTML(sp)}</div>`;
+      } else if (!g) {
+        h += `<div class="spawn-hero"><h3>Where to find it</h3><div class="count">Not in distribution files — crafted, shop, quest, or custom spawn.</div></div>`;
+      }
+    }
+
     const desc = it._desc || it.Tooltip?.replace(/^"|"$/g, '');
     if (desc) h += `<div class="wiki-desc">${esc(desc)}</div>`;
     if (g) h += `<div class="note hot"><h3>Source</h3><div class="prose">${g.t}</div></div>`;
     const q = window.QOL_BY_ID?.get(id);
     if (q?._note) h += `<div class="note hot"><h3>Notes</h3><div class="prose">${q._note}</div></div>`;
     if (q?._where?.length && FN.whereCards) h += FN.whereCards(q._where);
-    const sp = FN.mergeSpawns?.(id, window.GUIDE_DETAILS?.spawns) || [];
-    if (sp.length && FN.spawnLocHTML) h += FN.spawnLocHTML(sp);
-    else if (!g && !q?._where?.length) h += `<div class="dsec">Spawns</div><div class="count">Not in distribution files — crafted, shop, quest, or custom spawn.</div>`;
     const short = id.replace(/^[\w]+\./, '');
     const recs = window.GUIDE_DETAILS?.recipes[id] || window.GUIDE_DETAILS?.recipes[short] ||
       Object.entries(window.GUIDE_DETAILS?.recipes || {}).filter(([k]) => k.endsWith('.' + short)).flatMap(([, v]) => v);
@@ -383,7 +423,11 @@
   function closeWiki(restoreTab) {
     document.body.classList.remove('wiki-mode');
     document.title = cfg.siteName;
-    if (restoreTab !== false && window.GUIDE_BOOT?.showTab) window.GUIDE_BOOT.showTab(window.GUIDE_BOOT.lastTab || 'Overview');
+    if (restoreTab !== false && window.GUIDE_BOOT?.showTab) {
+      const last = window.GUIDE_BOOT.lastTab || 'Home';
+      if (last === 'Home' && window.GUIDE_BOOT.showHome) window.GUIDE_BOOT.showHome();
+      else window.GUIDE_BOOT.showTab(last);
+    }
     setOgMeta({ title: cfg.siteName, desc: cfg.description || '', image: `${cfg.siteUrl}/assets/og-default.png`, url: cfg.siteUrl });
   }
 

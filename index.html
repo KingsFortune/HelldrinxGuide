@@ -228,15 +228,24 @@ td.rewards { max-width: 260px; line-height: 1.55; }
 .bp-detail-mod { font-size: 10px; color: var(--pz-dim); margin-top: 6px; }
 .pz-trait.preview, .bp-occ.preview { outline: 1px solid var(--pz-gold); box-shadow: 0 0 0 1px var(--pz-gold); }
 </style>
+<link rel="stylesheet" href="wiki-shell.css">
 </head>
 <body>
-<header>
-  <h1>HellDrinx Field Guide / Wiki</h1>
-  <div id="genInfo"></div>
-  <nav id="tabs"></nav>
-</header>
-<div class="subnav" id="subnav"></div>
-<main id="main"></main>
+<div class="ws-app" id="wiki-app">
+  <aside class="ws-sidebar" id="wiki-sidebar"></aside>
+  <div class="ws-content">
+    <header class="ws-topbar">
+      <button type="button" class="ws-menu-btn" id="wiki-menu-btn" aria-label="Menu">☰</button>
+      <div class="ws-search-wrap">
+        <input type="search" class="ws-search" id="wiki-global-search" placeholder="Find loot — M60 magazine, M24 sniper…" autocomplete="off">
+      </div>
+      <span class="ws-search-hint" id="genInfo"></span>
+    </header>
+    <div class="subnav ws-subnav" id="subnav"></div>
+    <main id="main" class="ws-main"></main>
+  </div>
+</div>
+<nav id="tabs" hidden aria-hidden="true"></nav>
 <div id="dossier"><div class="dcard"></div></div>
 <div id="toast"></div>
 <script src="data.js"></script>
@@ -248,6 +257,9 @@ td.rewards { max-width: 260px; line-height: 1.55; }
 <script src="rooms.js"></script>
 <script src="qol.js"></script>
 <script src="pool_locs.js"></script>
+<script src="building_guide.js"></script>
+<script src="mod_inserts.js"></script>
+<script src="spawn_resolve.js"></script>
 <script src="icons.js"></script>
 <script>
 'use strict';
@@ -786,6 +798,27 @@ function showPanel(html) {
 }
 function closeDossier() { document.getElementById('dossier').classList.remove('open'); }
 
+function openPoolByName(pool, mod) {
+  ensureLoot();
+  const base = pool.replace(/ \(vehicle\)$/, '');
+  const key = base + '|' + (mod || 'Vanilla');
+  if (LOOT.poolByKey.has(key)) return openPoolPanel(key);
+  for (const k of LOOT.poolByKey.keys()) {
+    if (k.startsWith(base + '|')) return openPoolPanel(k);
+  }
+}
+window.openPoolByName = openPoolByName;
+
+function openRoomByName(room, mod) {
+  ensureLoot();
+  const key = room + '|' + (mod || '');
+  if (LOOT.roomByKey.has(key)) return openRoomPanel(key);
+  for (const k of LOOT.roomByKey.keys()) {
+    if (k.startsWith(room + '|')) return openRoomPanel(k);
+  }
+}
+window.openRoomByName = openRoomByName;
+
 function openChestPanel(idx) {
   const c = GUIDE_ECON.chests[idx];
   if (!c) return;
@@ -888,7 +921,7 @@ function copyToast(text) {
 window.copyToast = copyToast;
 window.closeDossier = closeDossier;
 
-window.GUIDE_FN = { opFor, mergeSpawns, spawnLocHTML, whereCards, tagHTML, esc };
+window.GUIDE_FN = { opFor, mergeSpawns, spawnLocHTML, whereCards, tagHTML, esc, poolHint };
 window.GUIDE_DETAILS = GUIDE_DETAILS;
 
 // ---------- tabs ----------
@@ -1259,6 +1292,7 @@ const lootSubs = {
     return d;
   },
   'Item Finder': () => {
+    if (typeof WIKI_LOOT !== 'undefined') return WIKI_LOOT.buildLootFinderPage();
     ensureLoot();
     const rows = LOOT.finder.map(r => {
       let coords = 0, pool = 0;
@@ -1322,22 +1356,11 @@ function vehTab() {
 }
 
 const TABS = {
-  Overview: () => {
-    const w = document.createElement('div');
-    w.innerHTML = `<div class="note"><h3>HellDrinx Field Guide</h3><div class="prose"><b>${I.length.toLocaleString()}</b> items from <b>${GUIDE_DATA.mods.length}</b> mods. Click any name for spawns, recipes, and stats.</div></div>`;
-    const strip = document.createElement('div');
-    strip.innerHTML = `<div class="sechead">Map pins</div><div class="opstrip">` +
-      MAP_PINS.map(g => { const hit = pinItem(g); return hit ? `<a class="ilink" data-id="${esc(hit._id)}">${esc(g.label)}</a>` : ''; }).join('') + '</div>';
-    const sh = document.createElement('div'); sh.className = 'sechead'; sh.textContent = 'Overview';
-    const notesEl = document.createElement('div');
-    notesEl.append(sh, notes(INTEL.overview));
-    w.append(strip, notesEl);
-    return w;
-  },
+  Home: () => (typeof WIKI_SHELL !== 'undefined' ? WIKI_SHELL.buildHomePage() : document.createElement('div')),
   Character: () => charSubs.Melee(),
   Economy: () => econSubs['Earning HC'](),
   Vehicles: () => vehTab(),
-  Loot: () => lootSubs['Hotspot Rooms'](),
+  Loot: () => lootSubs['Item Finder'](),
 };
 
 const SUBS = {
@@ -1349,15 +1372,19 @@ const SUBS = {
 const tabsEl = document.getElementById('tabs');
 const subnavEl = document.getElementById('subnav');
 const mainEl = document.getElementById('main');
-let currentTab = 'Overview', currentSub = null;
+let currentTab = 'Home', currentSub = null;
 
-function showSubnav(tab) {
+function showSubnav(tab, preferSub) {
   subnavEl.innerHTML = '';
   const subs = SUBS[tab];
   if (!subs) { subnavEl.style.display = 'none'; return; }
   subnavEl.style.display = 'flex';
-  const keys = Object.keys(subs);
-  if (!currentSub || !keys.includes(currentSub)) currentSub = keys[0];
+  const keysRaw = Object.keys(subs);
+  const keys = (tab === 'Loot' && keysRaw.includes('Item Finder'))
+    ? ['Item Finder', ...keysRaw.filter(k => k !== 'Item Finder')]
+    : keysRaw;
+  if (preferSub && keys.includes(preferSub)) currentSub = preferSub;
+  else if (!currentSub || !keys.includes(currentSub)) currentSub = (tab === 'Loot' && keys.includes('Item Finder')) ? 'Item Finder' : keys[0];
   for (const k of keys) {
     const b = document.createElement('button');
     b.textContent = k;
@@ -1368,45 +1395,63 @@ function showSubnav(tab) {
       b.classList.add('on');
       mainEl.innerHTML = '';
       mainEl.append(subs[k]());
+      if (typeof WIKI_SHELL !== 'undefined') WIKI_SHELL.setSidebarActive(tab, k);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     };
     subnavEl.append(b);
   }
 }
 
-function showTab(name) {
-  currentTab = name;
-  GUIDE_BOOT.lastTab = name;
+function showHome() {
+  currentTab = 'Home';
   currentSub = null;
+  GUIDE_BOOT.lastTab = 'Home';
   document.body.classList.remove('wiki-mode');
-  tabsEl.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.tab === name));
-  showSubnav(name);
+  subnavEl.style.display = 'none';
   mainEl.innerHTML = '';
-  const subs = SUBS[name];
-  if (subs) {
-    const keys = Object.keys(subs);
-    currentSub = keys[0];
-    subnavEl.querySelectorAll('button').forEach((b, i) => b.classList.toggle('on', i === 0));
-    mainEl.append(subs[keys[0]]());
-  } else {
-    mainEl.append(TABS[name]());
-  }
+  mainEl.append(TABS.Home());
+  if (typeof WIKI_SHELL !== 'undefined') WIKI_SHELL.setSidebarActive('Home');
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
-window.GUIDE_BOOT = { showTab, lastTab: 'Overview' };
+function showTab(name, preferSub) {
+  if (name === 'Home') { showHome(); return; }
+  currentTab = name;
+  GUIDE_BOOT.lastTab = name;
+  document.body.classList.remove('wiki-mode');
+  tabsEl.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.tab === name));
+  showSubnav(name, preferSub);
+  mainEl.innerHTML = '';
+  const subs = SUBS[name];
+  if (subs) {
+    const keysRaw = Object.keys(subs);
+    const keys = (name === 'Loot' && keysRaw.includes('Item Finder'))
+      ? ['Item Finder', ...keysRaw.filter(k => k !== 'Item Finder')]
+      : keysRaw;
+    if (preferSub && keys.includes(preferSub)) currentSub = preferSub;
+    else currentSub = (name === 'Loot' && keys.includes('Item Finder')) ? 'Item Finder' : keys[0];
+    subnavEl.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.textContent === currentSub));
+    mainEl.append(subs[currentSub]());
+  } else {
+    mainEl.append(TABS[name]());
+  }
+  if (typeof WIKI_SHELL !== 'undefined') WIKI_SHELL.setSidebarActive(name, subs ? currentSub : null);
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+window.GUIDE_BOOT = { showTab, showHome, lastTab: 'Home' };
 
 for (const k of Object.keys(TABS)) {
   const b = document.createElement('button');
   b.textContent = k;
   b.dataset.tab = k;
-  if (k === 'Overview') b.classList.add('on');
+  if (k === 'Home') b.classList.add('on');
   b.onclick = () => { GUIDE_BOOT.lastTab = k; showTab(k); };
   tabsEl.append(b);
 }
 
 document.getElementById('genInfo').textContent =
-  `HellDrinx server guide · ${I.length.toLocaleString()} items · ${GUIDE_DATA.mods.length} mods`;
+  `${I.length.toLocaleString()} items · ${GUIDE_DATA.mods.length} mods`;
 
 document.getElementById('dossier').onclick = e => { if (e.target.id === 'dossier') closeDossier(); };
 
@@ -1419,6 +1464,8 @@ document.addEventListener('click', e => {
   if (rm) { openRoomPanel(rm.dataset.room); return; }
   const pl = e.target.closest('[data-pool]');
   if (pl) { openPoolPanel(pl.dataset.pool); return; }
+  const lfp = e.target.closest('[data-lf-pool]');
+  if (lfp) { openPoolByName(lfp.dataset.lfPool, lfp.dataset.lfMod); return; }
   const vz = e.target.closest('[data-vzone]');
   if (vz) { openVehZonePanel(vz.dataset.vzone); return; }
   const veh = e.target.closest('[data-veh]');
@@ -1427,17 +1474,19 @@ document.addEventListener('click', e => {
   if (a?.dataset.id) { WIKI.open(a.dataset.id); return; }
 });
 
-showTab('Overview');
-
 </script>
+<script src="wiki-loot.js"></script>
+<script src="wiki-shell.js"></script>
 <script src="wiki.js"></script>
 <script>
 WIKI.init({
-  config: {"siteName":"HellDrinx Wiki","siteUrl":"https://YOUR_GITHUB_USER.github.io/HelldrinxGuide","description":"Project Zomboid HellDrinx server — items, loot, vehicles, quests"},
+  config: {"siteName":"HellDrinx Wiki","siteUrl":"https://KingsFortune.github.io/HelldrinxGuide","description":"Project Zomboid HellDrinx server — items, loot, vehicles, quests"},
   icons: typeof GUIDE_ICONS !== 'undefined' ? GUIDE_ICONS : {},
   items: I,
   vehicles: (typeof GUIDE_VEH !== 'undefined' ? GUIDE_VEH.vehicles : []),
 });
+if (typeof WIKI_SHELL !== 'undefined') WIKI_SHELL.init();
+if (!/^#wiki\//.test(location.hash)) showHome();
 </script>
 </body>
 </html>
